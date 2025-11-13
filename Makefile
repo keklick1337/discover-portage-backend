@@ -100,14 +100,12 @@ uninstall:
 		rm -f $(INSTALL_PREFIX)/lib*/qt6/plugins/discover/portage-backend.so; \
 		rm -f $(INSTALL_PREFIX)/lib64/qt*/plugins/discover/portage-backend.so; \
 		rm -f $(INSTALL_PREFIX)/lib64/qt6/plugins/discover/portage-backend.so; \
-		rm -f $(INSTALL_PREFIX)/share/libdiscover/categories/portage-backend-categories.xml; \
 	else \
 		sudo sh -c "$$UNINSTALL_CMD || true"; \
 		sudo rm -f $(INSTALL_PREFIX)/lib*/qt*/plugins/discover/portage-backend.so; \
 		sudo rm -f $(INSTALL_PREFIX)/lib*/qt6/plugins/discover/portage-backend.so; \
 		sudo rm -f $(INSTALL_PREFIX)/lib64/qt*/plugins/discover/portage-backend.so; \
 		sudo rm -f $(INSTALL_PREFIX)/lib64/qt6/plugins/discover/portage-backend.so; \
-		sudo rm -f $(INSTALL_PREFIX)/share/libdiscover/categories/portage-backend-categories.xml; \
 	fi
 	@echo ""
 	@echo "=== Uninstallation complete! ==="
