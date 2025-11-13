@@ -1,4 +1,4 @@
 [submodule "discover"]
 	path = discover
-	url = https://invent.kde.org/plasma/discover.git
+	url = https://github.com/KDE/discover.git
 	branch = v6.4.5
