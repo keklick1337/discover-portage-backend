@@ -1,0 +1,22 @@
+# Build files
+build/
+*.o
+*.so
+*.a
+*~
+*.swp
+*.swo
+.kdev4/
+*.kdev4
+CMakeLists.txt.user
+.vscode/
+.idea/
+compile_commands.json
+*.autosave
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+.cache
+examples
+src/.clang-format
+emerge_man

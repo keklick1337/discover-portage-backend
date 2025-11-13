@@ -1,0 +1,14 @@
+{
+    "KPlugin": {
+        "Description": "Portage (Gentoo) backend for Discover",
+        "EnabledByDefault": true,
+        "Icon": "gentoo",
+        "Id": "portage-backend",
+        "Name": "Portage Backend",
+        "ServiceTypes": [
+            "Discover/Backend"
+        ],
+        "Version": "0.1",
+        "Website": "https://github.com/keklick1337/discover-portage-backend"
+    }
+}
