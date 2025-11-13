@@ -15,6 +15,50 @@ This project provides full Portage integration into KDE Discover, allowing Gento
 - **Package Search**: Search packages by name or category
 - **Category Navigation**: Browse packages organized by Portage categories (net-im, dev-util, etc.)
 
+## Building and Installation
+
+### Quick Start
+
+```bash
+# Clone with submodules
+git clone --recursive https://github.com/keklick1337/discover-portage-backend.git
+cd discover-portage-backend
+
+# Install dependencies (optional if you already have KDE Plasma)
+make dependencies
+
+# Build everything
+make discover-deps
+make build
+
+# Install
+sudo make install
+
+# Restart Discover
+killall plasma-discover
+plasma-discover
+```
+
+### Manual Installation
+
+If `make install` doesn't work, copy or symlink manually:
+
+```bash
+sudo cp build/bin/discover/portage-backend.so /usr/lib64/qt6/plugins/discover/
+# OR
+sudo ln -s $(pwd)/build/bin/discover/portage-backend.so /usr/lib64/qt6/plugins/discover/
+```
+
+### Building for Different Discover Versions
+
+To build against a different version of Discover, update the version in `src/DiscoverConfig.h`:
+
+```cpp
+#define DISCOVER_PLUGIN_IID "org.kde.discover.6.4.5.AbstractResourcesBackendFactory"
+#define DISCOVER_NOTIFIER_IID "org.kde.discover.6.4.5.BackendNotifierModule"
+// Change both "6.4.5" to your Discover version
+```
+
 ## TODO
 
 ### High Priority
