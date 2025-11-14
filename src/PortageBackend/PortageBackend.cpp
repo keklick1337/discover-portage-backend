@@ -120,8 +120,6 @@ void PortageBackend::populateTestPackages()
 
 ResultsStream *PortageBackend::search(const AbstractResourcesBackend::Filters &filter)
 {
-    qDebug() << "Portage: Search called";
-    
     QVector<AbstractResource *> results;
     
     if (!filter.search.isEmpty()) {
@@ -148,10 +146,9 @@ ResultsStream *PortageBackend::search(const AbstractResourcesBackend::Filters &f
     else {
         // No filter - don't return everything, it's too slow
         // Return empty or limited results
+        // TODO: return popular packages or recently updated packages
     }
-    
-    qDebug() << "Portage: Search returned" << results.size() << "results";
-    
+
     auto stream = new ResultsStream(QStringLiteral("Portage-search"));
     
     if (results.isEmpty()) {

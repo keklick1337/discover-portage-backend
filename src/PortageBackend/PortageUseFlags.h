@@ -34,6 +34,9 @@ public:
     UseFlagInfo readInstalledPackageInfo(const QString &atom, const QString &version);
 
     QStringList readAvailableUseFlags(const QString &atom, const QString &repoPath = QStringLiteral("/var/db/repos/gentoo"));
+    
+    // Read USE flags from repository ebuild and metadata.xml
+    UseFlagInfo readRepositoryPackageInfo(const QString &atom, const QString &version, const QString &repoPath = QStringLiteral("/var/db/repos/gentoo"));
 
     QMap<QString, QStringList> readPackageUseConfig(const QString &atom);
 
@@ -48,6 +51,8 @@ public:
     static QStringList parseIUSE(const QString &iuseLine);
 
     static QStringList parseUSE(const QString &useLine);
+    
+    static QMap<QString, QString> parseMetadataXml(const QString &metadataPath);
 
 private:
     QString readVarDbFile(const QString &atom, const QString &version, const QString &filename);

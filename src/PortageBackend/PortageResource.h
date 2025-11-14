@@ -61,7 +61,11 @@ public:
     void fetchScreenshots() override;
     QDate releaseDate() const override { return QDate(); }
     QString sourceIcon() const override { return QStringLiteral("application-x-archive"); }
-    QList<PackageState> addonsInformation() override { return {}; }
+    QList<PackageState> addonsInformation() override;
+    
+    QStringList topObjects() const override;
+    
+    Q_INVOKABLE QVariantList useFlagsInformation();
     
     void setState(State state);
     void setAvailableVersion(const QString &version) { m_availableVersion = version; }
@@ -80,7 +84,7 @@ public:
     QStringList configuredUseFlags() const { return m_configuredUseFlags; }
     void setConfiguredUseFlags(const QStringList &flags);
     
-    bool saveUseFlags(const QStringList &flags);
+    Q_INVOKABLE bool saveUseFlags(const QStringList &flags);
     
     QMap<QString, QString> useFlagDescriptions() const { return m_useFlagDescriptions; }
     
@@ -100,6 +104,8 @@ Q_SIGNALS:
     void metadataChanged();
 
 private:
+    static const QStringList s_topObjects;
+    
     QString m_atom;
     QString m_category;
     QString m_packageName;

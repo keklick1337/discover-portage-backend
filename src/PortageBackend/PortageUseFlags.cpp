@@ -10,6 +10,7 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QDateTime>
+#include <QFileInfo>
 
 PortageUseFlags::PortageUseFlags(QObject *parent)
     : QObject(parent)
@@ -37,15 +38,22 @@ UseFlagInfo PortageUseFlags::readInstalledPackageInfo(const QString &atom, const
     const QString iuseContent = readVarDbFile(atom, version, QStringLiteral("IUSE"));
     info.availableFlags = parseIUSE(iuseContent);
 
-    info.repository = readVarDbFile(atom, version, QStringLiteral("repository"));
+    info.repository = readVarDbFile(atom, version, QStringLiteral("repository")).trimmed();
 
     info.slot = readVarDbFile(atom, version, QStringLiteral("SLOT"));
+    
+    // Read USE flag descriptions from repository metadata.xml
+    if (!info.repository.isEmpty()) {
+        QString metadataPath = QStringLiteral("/var/db/repos/%1/%2/metadata.xml").arg(info.repository, atom);
+        info.descriptions = parseMetadataXml(metadataPath);
+    }
 
     m_cache.insert(cacheKey, info);
 
     qDebug() << "PortageUseFlags: Read installed package info for" << atom << version
              << "- Active:" << info.activeFlags.size() << "Available:" << info.availableFlags.size()
-             << "Repo:" << info.repository << "Slot:" << info.slot;
+             << "Repo:" << info.repository << "Slot:" << info.slot
+             << "Descriptions:" << info.descriptions.size();
 
     return info;
 }
@@ -298,4 +306,80 @@ QString PortageUseFlags::packageUseDir()
 QString PortageUseFlags::useFlagFileName(const QString &packageName)
 {
     return QStringLiteral("discover_") + packageName;
+}
+
+QMap<QString, QString> PortageUseFlags::parseMetadataXml(const QString &metadataPath)
+{
+    QMap<QString, QString> descriptions;
+    
+    QFile file(metadataPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return descriptions;
+    }
+    
+    QString content = QString::fromUtf8(file.readAll());
+    file.close();
+
+    QRegularExpression flagRegex(QStringLiteral(R"(<flag\s+name=\"([^\"]+)\">([^<]+)</flag>)"));
+    QRegularExpressionMatchIterator it = flagRegex.globalMatch(content);
+    
+    while (it.hasNext()) {
+        QRegularExpressionMatch match = it.next();
+        QString flagName = match.captured(1);
+        QString description = match.captured(2).trimmed();
+
+        description = description.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+
+        descriptions[flagName] = description;
+    }
+    
+    qDebug() << "PortageUseFlags: Parsed" << descriptions.size() << "USE flag descriptions from" << metadataPath;
+    
+    return descriptions;
+}
+
+UseFlagInfo PortageUseFlags::readRepositoryPackageInfo(const QString &atom, const QString &version, const QString &repoPath)
+{
+    UseFlagInfo info;
+    info.atom = atom;
+    info.version = version;
+    info.repository = QFileInfo(repoPath).fileName(); // Extract repo name from path
+    
+    // Find ebuild file
+    QString ebuildPath = QStringLiteral("%1/%2/%3-%4.ebuild").arg(repoPath, atom, atom.section(QLatin1Char('/'), -1), version);
+    
+    QFile ebuildFile(ebuildPath);
+    if (ebuildFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&ebuildFile);
+        QString line;
+        
+        // Read ebuild line by line to find IUSE
+        while (in.readLineInto(&line)) {
+            if (line.startsWith(QStringLiteral("IUSE="))) {
+                // Extract IUSE value
+                QString iuseLine = line.mid(5).trimmed();
+                
+                // Remove quotes if present
+                if (iuseLine.startsWith(QLatin1Char('"')) && iuseLine.endsWith(QLatin1Char('"'))) {
+                    iuseLine = iuseLine.mid(1, iuseLine.length() - 2);
+                }
+                
+                info.availableFlags = parseIUSE(iuseLine);
+                break;
+            }
+        }
+        ebuildFile.close();
+    } else {
+        qDebug() << "PortageUseFlags: Could not open ebuild" << ebuildPath;
+    }
+    
+    // Read metadata.xml for descriptions
+    QString metadataPath = QStringLiteral("%1/%2/metadata.xml").arg(repoPath, atom);
+    info.descriptions = parseMetadataXml(metadataPath);
+    
+    qDebug() << "PortageUseFlags: Read repository package info for" << atom << version
+             << "- Available:" << info.availableFlags.size()
+             << "- Descriptions:" << info.descriptions.size();
+    
+    return info;
 }

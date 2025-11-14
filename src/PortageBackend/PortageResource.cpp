@@ -13,6 +13,8 @@
 #include <QXmlStreamReader>
 #include <QDir>
 
+const QStringList PortageResource::s_topObjects({QStringLiteral("qrc:/qml/UseFlagsButton.qml")});
+
 PortageResource::PortageResource(const QString &atom,
                                  const QString &name,
                                  const QString &summary,
@@ -39,7 +41,7 @@ PortageResource::PortageResource(const QString &atom,
     if (!m_category.isEmpty()) {
         m_discoverCategories.insert(m_category);
     }
-    qDebug() << "Portage: Created resource" << m_atom << "category:" << m_category;
+    //qDebug() << "Portage: Created resource" << m_atom << "category:" << m_category;
 }
 
 QString PortageResource::longDescription()
@@ -344,32 +346,47 @@ bool PortageResource::saveUseFlags(const QStringList &flags)
 
 void PortageResource::loadUseFlagInfo()
 {
-    qDebug() << "PortageResource::loadUseFlagInfo() for" << m_atom;
-    
-    if (m_state != AbstractResource::Installed) {
-        // Only load USE flag info for installed packages
-        return;
-    }
+    qDebug() << "PortageResource::loadUseFlagInfo() for" << m_atom << "state:" << m_state;
     
     PortageUseFlags useFlagManager;
     
-    // Read installed package USE flag information
-    UseFlagInfo info = useFlagManager.readInstalledPackageInfo(m_atom, m_installedVersion);
-    
-    if (!info.activeFlags.isEmpty()) {
-        m_installedUseFlags = info.activeFlags;
-    }
-    
-    if (!info.availableFlags.isEmpty()) {
-        m_availableUseFlags = info.availableFlags;
-    }
-    
-    if (!info.repository.isEmpty()) {
-        m_repository = info.repository;
-    }
-    
-    if (!info.slot.isEmpty()) {
-        m_slot = info.slot;
+    if (m_state == AbstractResource::Installed) {
+        // Read installed package USE flag information
+        UseFlagInfo info = useFlagManager.readInstalledPackageInfo(m_atom, m_installedVersion);
+        
+        if (!info.activeFlags.isEmpty()) {
+            m_installedUseFlags = info.activeFlags;
+        }
+        
+        if (!info.availableFlags.isEmpty()) {
+            m_availableUseFlags = info.availableFlags;
+        }
+        
+        if (!info.descriptions.isEmpty()) {
+            m_useFlagDescriptions = info.descriptions;
+        }
+        
+        if (!info.repository.isEmpty()) {
+            m_repository = info.repository;
+        }
+        
+        if (!info.slot.isEmpty()) {
+            m_slot = info.slot;
+        }
+    } else {
+        // For non-installed packages, read from repository
+        QString version = m_availableVersion.isEmpty() ? QStringLiteral("9999") : m_availableVersion;
+        QString repoPath = m_repository.isEmpty() ? QStringLiteral("/var/db/repos/gentoo") : QStringLiteral("/var/db/repos/") + m_repository;
+        
+        UseFlagInfo info = useFlagManager.readRepositoryPackageInfo(m_atom, version, repoPath);
+        
+        if (!info.availableFlags.isEmpty()) {
+            m_availableUseFlags = info.availableFlags;
+        }
+        
+        if (!info.descriptions.isEmpty()) {
+            m_useFlagDescriptions = info.descriptions;
+        }
     }
     
     // Read configured USE flags from /etc/portage/package.use
@@ -387,6 +404,76 @@ void PortageResource::loadUseFlagInfo()
              << "- Installed:" << m_installedUseFlags.size()
              << "Available:" << m_availableUseFlags.size()
              << "Configured:" << m_configuredUseFlags.size();
+}
+
+QList<PackageState> PortageResource::addonsInformation()
+{
+    return {};
+}
+
+QStringList PortageResource::topObjects() const
+{
+    qDebug() << "PortageResource::topObjects() for" << m_atom 
+             << "- available:" << m_availableUseFlags.size()
+             << "installed:" << m_installedUseFlags.size()
+             << "- returning:" << s_topObjects;
+    
+    if (m_availableUseFlags.isEmpty() && m_installedUseFlags.isEmpty()) {
+        qDebug() << "  -> Returning empty (no USE flags)";
+        return {};
+    }
+    qDebug() << "  -> Returning" << s_topObjects;
+    return s_topObjects;
+}
+
+QVariantList PortageResource::useFlagsInformation()
+{
+    qDebug() << "PortageResource::useFlagsInformation() called for" << m_atom
+             << "state:" << m_state
+             << "available:" << m_availableUseFlags.size()
+             << "installed:" << m_installedUseFlags.size();
+    
+    QVariantList useFlags;
+    
+    // If package is not installed, show available USE flags from IUSE
+    if (m_state != AbstractResource::Installed && m_state != AbstractResource::Upgradeable) {
+        for (const QString &flag : m_availableUseFlags) {
+            // Check if flag is in configured flags
+            bool enabled = m_configuredUseFlags.contains(flag) || m_configuredUseFlags.contains(QLatin1Char('+') + flag);
+            bool disabled = m_configuredUseFlags.contains(QLatin1Char('-') + flag);
+            
+            if (disabled) {
+                enabled = false;
+            }
+            
+            QString description = m_useFlagDescriptions.value(flag, flag);
+            
+            QVariantMap flagData;
+            flagData[QStringLiteral("name")] = flag;
+            flagData[QStringLiteral("packageName")] = flag;
+            flagData[QStringLiteral("description")] = description;
+            flagData[QStringLiteral("installed")] = enabled;
+            
+            useFlags << flagData;
+        }
+        return useFlags;
+    }
+    
+    // For installed packages, show all available flags with current state
+    for (const QString &flag : m_availableUseFlags) {
+        bool isInstalled = m_installedUseFlags.contains(flag);
+        QString description = m_useFlagDescriptions.value(flag, flag);
+        
+        QVariantMap flagData;
+        flagData[QStringLiteral("name")] = flag;
+        flagData[QStringLiteral("packageName")] = flag;
+        flagData[QStringLiteral("description")] = description;
+        flagData[QStringLiteral("installed")] = isInstalled;
+        
+        useFlags << flagData;
+    }
+    
+    return useFlags;
 }
 
 #include "moc_PortageResource.cpp"

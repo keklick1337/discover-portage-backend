@@ -5,6 +5,7 @@ set(portage-backend_SRCS
     PortageUseFlags.cpp
     repository/PortageRepositoryReader.cpp
     installed/PortageInstalledReader.cpp
+    portageui.qrc
 )
 
 ecm_qt_declare_logging_category(portage-backend_SRCS 
