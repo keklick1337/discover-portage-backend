@@ -29,14 +29,20 @@ PortageBackend::PortageBackend(QObject *parent)
     PortageRepositoryReader repoReader(this, this);
     repoReader.loadRepository();
     const auto repoPackages = repoReader.packages();
+    
+    // Collect known atoms for better version parsing
+    QSet<QString> knownAtoms;
     for (auto it = repoPackages.constBegin(); it != repoPackages.constEnd(); ++it) {
         PortageResource *r = it.value();
-        // insert by package name (lowercase)
-        m_resources.insert(r->packageName().toLower(), r);
+        // insert by atom (category/package, lowercase)
+        QString atom = r->atom().toLower();
+        m_resources.insert(atom, r);
+        knownAtoms.insert(atom);
     }
 
     // Load installed packages and update resource states
     PortageInstalledReader instReader(this, this);
+    instReader.setKnownPackages(knownAtoms); // Pass known packages for better parsing
     instReader.loadInstalledPackages();
     const auto installed = instReader.installedVersions();
     const auto installedInfo = instReader.installedPackagesInfo();
@@ -45,9 +51,8 @@ PortageBackend::PortageBackend(QObject *parent)
         const QString atom = it.key();
         const InstalledPackageInfo &info = it.value();
         
-        // atom is category/pkg
-        const QString pkg = atom.section(QLatin1Char('/'), 1);
-        PortageResource *r = m_resources.value(pkg.toLower(), nullptr);
+        // Look up by atom (category/package)
+        PortageResource *r = m_resources.value(atom.toLower(), nullptr);
         if (r) {
             r->setInstalledVersion(info.version);
             r->setState(AbstractResource::Installed);
@@ -57,6 +62,7 @@ PortageBackend::PortageBackend(QObject *parent)
             r->setAvailableUseFlags(info.availableUseFlags);
         } else {
             // Create resource for installed package not present in repo scan
+            const QString pkg = atom.section(QLatin1Char('/'), 1);
             PortageResource *nr = new PortageResource(atom, pkg, QString(), this);
             nr->setInstalledVersion(info.version);
             nr->setState(AbstractResource::Installed);
@@ -64,7 +70,7 @@ PortageBackend::PortageBackend(QObject *parent)
             nr->setSlot(info.slot);
             nr->setInstalledUseFlags(info.useFlags);
             nr->setAvailableUseFlags(info.availableUseFlags);
-            m_resources.insert(pkg.toLower(), nr);
+            m_resources.insert(atom.toLower(), nr);
         }
     }
 

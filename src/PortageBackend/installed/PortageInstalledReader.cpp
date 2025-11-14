@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QDebug>
 #include <QFile>
+#include <QRegularExpression>
 
 PortageInstalledReader::PortageInstalledReader(PortageBackend *backend, QObject *parent)
     : QObject(parent)
@@ -43,15 +44,42 @@ void PortageInstalledReader::scanPkgDb(const QString &path)
         const QFileInfoList pkgDirs = catDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
         for (const QFileInfo &pkgInfo : pkgDirs) {
             const QString dirname = pkgInfo.fileName();
-            // dirname is like package-version; split at last '-'
-            int idx = dirname.lastIndexOf(QLatin1Char('-'));
-            if (idx <= 0)
-                continue;
-            const QString pkg = dirname.left(idx);
-            const QString ver = dirname.mid(idx + 1);
-            const QString atom = category + QLatin1Char('/') + pkg;
             
-            // Read additional information from the package directory
+            // Try to match against known packages first for better accuracy
+            QString pkg;
+            QString ver;
+            const QString fullAtom = category + QLatin1Char('/');
+            
+            bool foundMatch = false;
+            if (!m_knownAtoms.isEmpty()) {
+                for (int i = dirname.length() - 1; i >= 0; --i) {
+                    if (dirname[i] == QLatin1Char('-') && i + 1 < dirname.length() && dirname[i + 1].isDigit()) {
+                        QString testPkg = dirname.left(i);
+                        QString testAtom = fullAtom + testPkg;
+                        
+                        if (m_knownAtoms.contains(testAtom.toLower())) {
+                            pkg = testPkg;
+                            ver = dirname.mid(i + 1);
+                            foundMatch = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!foundMatch) {
+                QRegularExpression versionRe(QStringLiteral("^(.+)-(\\d.*)$"));
+                QRegularExpressionMatch match = versionRe.match(dirname);
+                
+                if (!match.hasMatch())
+                    continue;
+                    
+                pkg = match.captured(1);
+                ver = match.captured(2);
+            }
+            
+            const QString atom = fullAtom + pkg;
+
             InstalledPackageInfo info;
             info.version = ver;
             
