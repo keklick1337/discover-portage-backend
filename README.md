@@ -73,6 +73,7 @@ To build against a different version of Discover, update the version in `src/Dis
 - [x] Read USE flags from installed packages
 - [x] Display available USE flags
 - [x] Read configured USE flags from `/etc/portage/package.use/`
+- [ ] Display message when USE flags was changed
 - [ ] Write USE flag changes
 - [ ] USE flag description tooltips
 - [x] Interactive USE flag editor UI
