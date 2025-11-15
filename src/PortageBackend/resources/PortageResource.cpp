@@ -4,7 +4,7 @@
  */
 
 #include "PortageResource.h"
-#include "PortageBackend.h"
+#include "../backend/PortageBackend.h"
 #include "PortageUseFlags.h"
 #include <KLocalizedString>
 #include <QProcess>

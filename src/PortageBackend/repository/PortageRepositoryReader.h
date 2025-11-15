@@ -30,6 +30,7 @@ Q_SIGNALS:
 
 private:
     void scanRepositoryPath(const QString &path);
+    QString findLatestVersion(const QString &pkgPath, const QString &pkgName);
 
     PortageBackend *m_backend;
     QHash<QString, PortageResource *> m_packages;

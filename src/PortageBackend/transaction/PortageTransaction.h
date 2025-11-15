@@ -6,8 +6,10 @@
 #pragma once
 
 #include <Transaction/Transaction.h>
+#include "../emerge/EmergeRunner.h"
 
 class PortageResource;
+class UnmaskManager;
 
 class PortageTransaction : public Transaction
 {
@@ -22,9 +24,17 @@ public:
 private Q_SLOTS:
     void simulateProgress();
     void finishTransaction();
+    void onEmergeOutput(const QString &line);
+    void onEmergeError(const QString &line);
+    void onEmergeFinished(bool success, int exitCode);
+    void onDependenciesChecked(const EmergeRunner::EmergeResult &result);
 
 private:
     PortageResource *m_resource;
     AddonList m_addons;
     int m_progress;
+    EmergeRunner *m_emergeRunner;
+    UnmaskManager *m_unmaskManager;
+    
+    void handleUnmaskRequest(const EmergeRunner::EmergeResult &result);
 };

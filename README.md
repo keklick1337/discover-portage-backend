@@ -41,12 +41,12 @@ plasma-discover
 
 ### Manual Installation
 
-If `make install` doesn't work, copy or symlink manually:
+For development, use `dev_install.sh` script that creates symlinks:
 
 ```bash
-sudo cp build/bin/discover/portage-backend.so /usr/lib64/qt6/plugins/discover/
-# OR
-sudo ln -s $(pwd)/build/bin/discover/portage-backend.so /usr/lib64/qt6/plugins/discover/
+make build
+sudo ./dev_install.sh
+# After changes: make && killall plasma-discover && plasma-discover
 ```
 
 ### Building for Different Discover Versions
@@ -63,15 +63,18 @@ To build against a different version of Discover, update the version in `src/Dis
 
 ### High Priority
 
-- [ ] Implement actual package installation
-- [ ] Implement package removal
+- [x] Implement portage backend service with KAuth
+- [x] Implement actual package installation
+- [x] Implement package removal
+- [ ] Implement version selecting for install
 - [ ] Add update check functionality
 - [ ] Implement package updates
 
 ### USE Flags
 
 - [x] Read USE flags from installed packages
-- [x] Display available USE flags
+- [x] Display available USE flags for installed package
+- [ ] Display available USE flags any package (ebuild parsing?)
 - [x] Read configured USE flags from `/etc/portage/package.use/`
 - [ ] Display message when USE flags was changed
 - [ ] Write USE flag changes
@@ -88,7 +91,11 @@ To build against a different version of Discover, update the version in `src/Dis
 
 ### Advanced Features
 
-- [ ] Package masking/unmasking
+- [x] Package masking
+- [ ] Package unmasking
+- [ ] Tasks lists and task monitoring
+- [ ] Package search by description
+- [ ] Message box with error details
 - [ ] World file integration
 - [ ] News reader (Gentoo news items)
 - [ ] Sync repository functionality

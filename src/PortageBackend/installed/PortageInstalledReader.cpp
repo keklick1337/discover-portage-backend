@@ -4,8 +4,8 @@
  */
 
 #include "PortageInstalledReader.h"
-#include "../PortageBackend.h"
-#include "../PortageUseFlags.h"
+#include "../backend/PortageBackend.h"
+#include "../resources/PortageUseFlags.h"
 
 #include <QDir>
 #include <QDebug>

@@ -4,8 +4,8 @@
  */
 
 #include "PortageRepositoryReader.h"
-#include "../PortageBackend.h"
-#include "../PortageResource.h"
+#include "../backend/PortageBackend.h"
+#include "../resources/PortageResource.h"
 
 #include <QDir>
 #include <QDebug>
@@ -42,24 +42,48 @@ void PortageRepositoryReader::loadRepository()
 void PortageRepositoryReader::scanRepositoryPath(const QString &path)
 {
     QDir repo(path);
-    const QString repoName = QFileInfo(path).fileName(); // e.g., "gentoo", "mva", "kek-overlay"
+    const QString repoName = QFileInfo(path).fileName();
     
     const QFileInfoList categories = repo.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
     for (const QFileInfo &catInfo : categories) {
         const QString catPath = catInfo.absoluteFilePath();
         const QString category = catInfo.fileName();
         QDir catDir(catPath);
-        // packages are subdirectories
         const QFileInfoList packages = catDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
         for (const QFileInfo &pkgInfo : packages) {
             const QString pkg = pkgInfo.fileName();
             const QString atom = category + QLatin1Char('/') + pkg;
-            // Use atom as key to avoid duplicates (prefer first repo found, typically gentoo)
             if (m_packages.contains(atom))
                 continue;
+            
             PortageResource *res = new PortageResource(atom, pkg, QString(), m_backend);
-            res->setRepository(repoName); // remember which repo this package comes from
+            res->setRepository(repoName);
+            
+            QString latestVersion = findLatestVersion(pkgInfo.absoluteFilePath(), pkg);
+            if (!latestVersion.isEmpty()) {
+                res->setAvailableVersion(latestVersion);
+            }
+            
             m_packages.insert(atom, res);
         }
     }
+}
+
+QString PortageRepositoryReader::findLatestVersion(const QString &pkgPath, const QString &pkgName)
+{
+    QDir pkgDir(pkgPath);
+    QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files);
+    
+    QString latestVersion;
+    for (const QString &ebuild : ebuilds) {
+        QString version = ebuild;
+        version.remove(0, pkgName.length() + 1);
+        version.chop(7);
+        
+        if (latestVersion.isEmpty() || version > latestVersion) {
+            latestVersion = version;
+        }
+    }
+    
+    return latestVersion;
 }

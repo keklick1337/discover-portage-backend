@@ -4,8 +4,8 @@
  */
 
 #include "PortageBackend.h"
-#include "PortageResource.h"
-#include "PortageTransaction.h"
+#include "../resources/PortageResource.h"
+#include "../transaction/PortageTransaction.h"
 
 #include <Category/Category.h>
 #include <resources/StandardBackendUpdater.h>
