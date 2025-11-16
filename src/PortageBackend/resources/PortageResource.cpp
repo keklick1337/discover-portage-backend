@@ -465,23 +465,23 @@ bool PortageResource::saveUseFlags(const QStringList &flags)
 {
     qDebug() << "PortageResource::saveUseFlags() - saving flags for" << m_atom << ":" << flags;
     
-    // Filter out L10N flags that are already in make.conf (global L10N setting)
-    // Only write L10N flags if they're being explicitly disabled (start with -)
     MakeConfReader makeConf;
     QStringList globalL10n = makeConf.readL10N();
+    QStringList globalUse = makeConf.readGlobalUseFlags();
     
     QStringList filteredFlags;
     for (const QString &flag : flags) {
-        // If it's a disabled L10N flag (starts with -l10n_), keep it
-        if (flag.startsWith(QStringLiteral("-l10n_"))) {
+        if (flag.startsWith(QLatin1Char('-'))) {
             filteredFlags << flag;
         }
-        // If it's an enabled L10N flag that's already in global L10N, skip it
         else if (flag.startsWith(QStringLiteral("l10n_")) && globalL10n.contains(flag)) {
             qDebug() << "PortageResource: Skipping L10N flag" << flag << "(already in make.conf)";
             continue;
         }
-        // Otherwise, keep the flag
+        else if (globalUse.contains(flag)) {
+            qDebug() << "PortageResource: Skipping USE flag" << flag << "(already in make.conf)";
+            continue;
+        }
         else {
             filteredFlags << flag;
         }
@@ -489,7 +489,6 @@ bool PortageResource::saveUseFlags(const QStringList &flags)
     
     qDebug() << "PortageResource: Filtered flags:" << filteredFlags;
     
-    // Use KAuth to write USE flags with root privileges (asynchronous)
     auto *authClient = new PortageAuthClient(this);
     
     authClient->setUseFlags(m_atom, filteredFlags, [this, authClient, filteredFlags](bool ok, const QString &/*output*/, const QString &error) {
@@ -502,7 +501,6 @@ bool PortageResource::saveUseFlags(const QStringList &flags)
         authClient->deleteLater();
     });
     
-    // Return true optimistically - the callback will handle errors
     return true;
 }
 
