@@ -187,7 +187,7 @@ void EmergeRunner::uninstallPackage(const QString &atom)
     
     QStringList emergeArgs;
     emergeArgs << QStringLiteral("--verbose")
-               << QStringLiteral("--depclean")
+               << QStringLiteral("--rage-clean")
                << atom;
     
     args[QStringLiteral("args")] = emergeArgs;
@@ -196,7 +196,7 @@ void EmergeRunner::uninstallPackage(const QString &atom)
     removeAction.setArguments(args);
     removeAction.setTimeout(-1);
     
-    qDebug() << "EmergeRunner: Executing KAuth action for removal";
+    qDebug() << "EmergeRunner: Executing KAuth action for removal with --rage-clean";
     KAuth::ExecuteJob *job = removeAction.execute();
     
     connect(job, &KAuth::ExecuteJob::result, this, [this](KJob *kjob) {

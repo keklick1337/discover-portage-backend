@@ -35,8 +35,8 @@ public:
     QString section() override { return m_category; }
     QString origin() const override { return QStringLiteral("Portage"); }
     
-    QString availableVersion() const override { return m_availableVersion; }
-    QString installedVersion() const override { return m_installedVersion; }
+    QString availableVersion() const override;
+    QString installedVersion() const override;
     
     quint64 size() override { return m_size; }
     
@@ -71,8 +71,8 @@ public:
     QVariantList useFlagsInformation();
     
     void setState(State state);
-    void setAvailableVersion(const QString &version) { m_availableVersion = version; }
-    void setInstalledVersion(const QString &version) { m_installedVersion = version; }
+    void setAvailableVersion(const QString &version) { m_availableVersion = version; Q_EMIT versionChanged(); }
+    void setInstalledVersion(const QString &version);
     void setSize(quint64 size) { m_size = size; }
     void setRepository(const QString &repo);
     void setSlot(const QString &slot);
@@ -114,6 +114,7 @@ public:
 Q_SIGNALS:
     void useFlagsChanged();
     void metadataChanged();
+    void versionChanged();
 
 private:
     QString m_atom;

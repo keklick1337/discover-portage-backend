@@ -76,15 +76,15 @@ ColumnLayout {
                             required property var modelData
                             required property int index
 
-                            readonly property bool isInstalled: modelData && modelData.installed === true
+                            readonly property bool isInstalled: modelData !== null && modelData !== undefined && modelData.installed === true
 
-                            text: isInstalled ? modelData.name : ("-" + modelData.name)
+                            text: isInstalled ? modelData.name : ("-" + (modelData ? modelData.name : ""))
                             color: isInstalled ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.disabledTextColor
                             font.bold: isInstalled
                             font.weight: isInstalled ? Font.Bold : Font.Light
                             
                             QQC2.ToolTip {
-                                visible: parent.hovered
+                                visible: parent.hovered && modelData !== null && modelData !== undefined
                                 text: modelData ? modelData.description : ""
                                 delay: Kirigami.Units.toolTipDelay
                             }

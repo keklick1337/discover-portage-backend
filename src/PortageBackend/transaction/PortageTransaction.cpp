@@ -10,6 +10,7 @@
 #include "../emerge/UnmaskManager.h"
 #include <KLocalizedString>
 #include <QTimer>
+#include <QPointer>
 #include <QDebug>
 
 PortageTransaction::PortageTransaction(PortageResource *app, Role role)
@@ -95,16 +96,10 @@ void PortageTransaction::proceed()
             }
         }
     } else if (role() == RemoveRole) {
-        // For removal, use exact installed version to avoid removing wrong slots
-        QString installedVersion = m_resource->installedVersion();
-        QString atomWithVersion;
-        if (!installedVersion.isEmpty()) {
-            atomWithVersion = QStringLiteral("=") + atom + QStringLiteral("-") + installedVersion;
-        } else {
-            atomWithVersion = atom;  // Fallback if version unknown
-        }
-        qDebug() << "Portage: Starting removal of" << atomWithVersion;
-        m_emergeRunner->uninstallPackage(atomWithVersion);
+        // For removal, use atom without version
+        // emerge --depclean works with package atom, not specific versions
+        qDebug() << "Portage: Starting removal of" << atom;
+        m_emergeRunner->uninstallPackage(atom);
     }
 }
 
@@ -126,24 +121,24 @@ void PortageTransaction::onEmergeFinished(bool success, int exitCode)
     if (success) {
         if (role() == InstallRole) {
             m_resource->setState(AbstractResource::Installed);
-            // If we requested a specific version, record that, else use availableVersion
-            if (!m_resource->requestedVersion().isEmpty()) {
-                m_resource->setInstalledVersion(m_resource->requestedVersion());
-            } else {
-                m_resource->setInstalledVersion(m_resource->availableVersion());
-            }
             
-            // Reload USE flags info after installation
-            m_resource->loadUseFlagInfo();
-            qDebug() << "Portage: Reloaded USE flags after installation for" << m_resource->packageName();
+            // Delay loading USE flags to allow /var/db/pkg to be populated
+            QPointer<PortageResource> res = m_resource;
+            QTimer::singleShot(500, [res]() {
+                if (res) {
+                    qDebug() << "Portage: Delayed reload of USE flags for" << res->packageName();
+                    res->loadUseFlagInfo();
+                    qDebug() << "Portage: Installation completed for" << res->packageName();
+                } else {
+                    qWarning() << "Portage: Resource was deleted before delayed reload";
+                }
+            });
             
         } else if (role() == RemoveRole) {
             m_resource->setState(AbstractResource::None);
             m_resource->setInstalledVersion(QString());
-            
-            // Clear USE flags after removal
-            m_resource->loadUseFlagInfo();
-            qDebug() << "Portage: Cleared USE flags after removal for" << m_resource->packageName();
+            // setInstalledVersion() automatically calls loadUseFlagInfo()
+            qDebug() << "Portage: Removal completed for" << m_resource->packageName();
         }
         setStatus(DoneStatus);
     } else {

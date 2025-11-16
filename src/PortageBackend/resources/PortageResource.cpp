@@ -80,6 +80,50 @@ void PortageResource::requestReinstall()
     }
 }
 
+QString PortageResource::availableVersion() const
+{
+    // If installed, show installed version
+    if (m_state == AbstractResource::Installed || m_state == AbstractResource::Upgradeable) {
+        return m_availableVersion;
+    }
+    
+    // For non-installed packages, check if multiple versions available
+    if (!m_repository.isEmpty()) {
+        QString repoPath = QStringLiteral("/var/db/repos/") + m_repository;
+        QString pkgPath = repoPath + QLatin1Char('/') + m_atom;
+        
+        QDir pkgDir(pkgPath);
+        if (pkgDir.exists()) {
+            QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files, QDir::Name);
+            if (ebuilds.size() > 1) {
+                return QStringLiteral("multiple versions");
+            } else if (ebuilds.size() == 1) {
+                // Extract version from single ebuild
+                QString ebuild = ebuilds.first();
+                QString version = ebuild;
+                version.remove(0, m_packageName.length() + 1);
+                if (version.endsWith(QLatin1String(".ebuild"))) {
+                    version.chop(7);
+                }
+                return version;
+            }
+        }
+    }
+    
+    return m_availableVersion;
+}
+
+QString PortageResource::installedVersion() const
+{
+    // If not installed, return empty
+    if (m_state != AbstractResource::Installed && m_state != AbstractResource::Upgradeable) {
+        return QString();
+    }
+    
+    // Return cached installed version
+    return m_installedVersion;
+}
+
 QStringList PortageResource::availableVersions()
 {
     // Lazy-load versions on first access to avoid scanning 20k+ packages at startup
@@ -216,6 +260,18 @@ void PortageResource::setState(State state)
     if (m_state != state) {
         m_state = state;
         Q_EMIT stateChanged();
+        Q_EMIT versionChanged(); // Version display depends on state
+    }
+}
+
+void PortageResource::setInstalledVersion(const QString &version)
+{
+    if (m_installedVersion != version) {
+        m_installedVersion = version;
+        Q_EMIT versionChanged();
+        
+        // Also trigger USE flags reload when version changes
+        loadUseFlagInfo();
     }
 }
 
@@ -456,9 +512,16 @@ void PortageResource::loadUseFlagInfo()
     
     PortageUseFlags useFlagManager;
     
-    if (m_state == AbstractResource::Installed) {
+    if (m_state == AbstractResource::Installed || m_state == AbstractResource::Upgradeable) {
         // Read installed package USE flag information
-        UseFlagInfo info = useFlagManager.readInstalledPackageInfo(m_atom, m_installedVersion);
+        // Pass empty version to let it auto-detect from /var/db/pkg
+        UseFlagInfo info = useFlagManager.readInstalledPackageInfo(m_atom, QString());
+        
+        // Update version from actual installed package
+        if (!info.version.isEmpty() && m_installedVersion != info.version) {
+            m_installedVersion = info.version;
+            Q_EMIT versionChanged();
+        }
         
         if (!info.activeFlags.isEmpty()) {
             m_installedUseFlags = info.activeFlags;

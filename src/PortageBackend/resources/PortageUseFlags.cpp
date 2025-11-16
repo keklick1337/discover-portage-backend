@@ -25,24 +25,51 @@ PortageUseFlags::~PortageUseFlags()
 
 UseFlagInfo PortageUseFlags::readInstalledPackageInfo(const QString &atom, const QString &version)
 {
-    const QString cacheKey = atom + QStringLiteral("-") + version;
+    QString actualVersion = version;
+    
+    // If version is empty, auto-detect from /var/db/pkg
+    if (actualVersion.isEmpty()) {
+        // Extract category and package name
+        QString category = atom.section(QLatin1Char('/'), 0, 0);
+        QString pkgName = atom.section(QLatin1Char('/'), 1);
+        
+        // Look in /var/db/pkg/category/ for directories matching pkgname-*
+        QDir categoryDir(QStringLiteral("/var/db/pkg/%1").arg(category));
+        if (categoryDir.exists()) {
+            QFileInfoList entries = categoryDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+            for (const QFileInfo &entry : entries) {
+                QString dirName = entry.fileName();
+                // Check if directory starts with "pkgname-"
+                if (dirName.startsWith(pkgName + QLatin1Char('-'))) {
+                    // Extract version from "pkgname-version"
+                    actualVersion = dirName.mid(pkgName.length() + 1);
+                    qDebug() << "PortageUseFlags: Auto-detected version" << actualVersion << "for" << atom;
+                    break;
+                }
+            }
+        } else {
+            qDebug() << "PortageUseFlags: Category directory does not exist:" << categoryDir.path();
+        }
+    }
+    
+    const QString cacheKey = atom + QStringLiteral("-") + actualVersion;
     if (m_cache.contains(cacheKey)) {
         return m_cache.value(cacheKey);
     }
 
     UseFlagInfo info;
     info.atom = atom;
-    info.version = version;
+    info.version = actualVersion;
 
-    const QString useContent = readVarDbFile(atom, version, QStringLiteral("USE"));
+    const QString useContent = readVarDbFile(atom, actualVersion, QStringLiteral("USE"));
     info.activeFlags = parseUSE(useContent);
 
-    const QString iuseContent = readVarDbFile(atom, version, QStringLiteral("IUSE"));
+    const QString iuseContent = readVarDbFile(atom, actualVersion, QStringLiteral("IUSE"));
     info.availableFlags = parseIUSE(iuseContent);
 
-    info.repository = readVarDbFile(atom, version, QStringLiteral("repository")).trimmed();
+    info.repository = readVarDbFile(atom, actualVersion, QStringLiteral("repository")).trimmed();
 
-    info.slot = readVarDbFile(atom, version, QStringLiteral("SLOT"));
+    info.slot = readVarDbFile(atom, actualVersion, QStringLiteral("SLOT"));
     
     // Read USE flag descriptions from repository metadata.xml
     if (!info.repository.isEmpty()) {
@@ -52,7 +79,7 @@ UseFlagInfo PortageUseFlags::readInstalledPackageInfo(const QString &atom, const
 
     m_cache.insert(cacheKey, info);
 
-    qDebug() << "PortageUseFlags: Read installed package info for" << atom << version
+    qDebug() << "PortageUseFlags: Read installed package info for" << atom << actualVersion
              << "- Active:" << info.activeFlags.size() << "Available:" << info.availableFlags.size()
              << "Repo:" << info.repository << "Slot:" << info.slot
              << "Descriptions:" << info.descriptions.size();
