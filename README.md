@@ -97,6 +97,8 @@ To build against a different version of Discover, update the version in `src/Dis
 
 - [ ] Package masking
 - [x] Package unmasking
+- [ ] Message for approve licenses during installation
+- [ ] License acceptance management in package.license
 - [ ] Tasks lists and task monitoring
 - [ ] Package search by description
 - [ ] Message box with error details
@@ -112,6 +114,17 @@ To build against a different version of Discover, update the version in `src/Dis
 - [ ] Remove overlays
 - [ ] Overlay metadata display
 - [x] Search packages across overlays
+
+### Configuration
+
+- [ ] Visual make.conf editor
+- [ ] Edit global USE flags in make.conf
+- [ ] Configure ACCEPT_KEYWORDS
+- [ ] Configure ACCEPT_LICENSE
+- [ ] Set MAKEOPTS and parallel builds
+- [ ] Binary packages support (FEATURES="getbinpkg")
+- [ ] Binary package installation preference
+- [ ] Configure GENTOO_MIRRORS
 
 ### Bugs
 
