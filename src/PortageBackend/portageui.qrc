@@ -1,6 +1,8 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
  <qresource>
+    <file>qml/PortageActionInjector.qml</file>
+    <file>qml/ReinstallAction.qml</file>
     <file>qml/UseFlagsButton.qml</file>
  </qresource>
 </RCC>

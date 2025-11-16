@@ -10,6 +10,7 @@
 
 class PortageResource;
 class StandardBackendUpdater;
+class PortageQmlInjector;
 
 class PortageBackend : public AbstractResourcesBackend
 {
@@ -40,8 +41,10 @@ public:
 
 private:
     void populateTestPackages();
+    void setupQmlInjector();
 
     QHash<QString, PortageResource *> m_resources;
     StandardBackendUpdater *m_updater;
+    PortageQmlInjector *m_qmlInjector;
     bool m_initialized;
 };

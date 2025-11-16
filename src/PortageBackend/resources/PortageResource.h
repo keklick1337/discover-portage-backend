@@ -14,6 +14,8 @@ class PortageResource : public AbstractResource
     Q_PROPERTY(QStringList installedUseFlags READ installedUseFlags NOTIFY useFlagsChanged)
     Q_PROPERTY(QStringList availableUseFlags READ availableUseFlags NOTIFY useFlagsChanged)
     Q_PROPERTY(QStringList configuredUseFlags READ configuredUseFlags WRITE setConfiguredUseFlags NOTIFY useFlagsChanged)
+    Q_PROPERTY(QStringList availableVersions READ availableVersions NOTIFY metadataChanged)
+    Q_PROPERTY(QString requestedVersion READ requestedVersion WRITE setRequestedVersion NOTIFY metadataChanged)
     Q_PROPERTY(QString slot READ slot NOTIFY metadataChanged)
     Q_PROPERTY(QString repository READ repository NOTIFY metadataChanged)
     
@@ -73,6 +75,15 @@ public:
     void setSize(quint64 size) { m_size = size; }
     void setRepository(const QString &repo);
     void setSlot(const QString &slot);
+
+    QStringList availableVersions();
+    void setAvailableVersions(const QStringList &versions) { m_availableVersions = versions; Q_EMIT metadataChanged(); }
+
+    QString requestedVersion() const { return m_requestedVersion; }
+    void setRequestedVersion(const QString &v) { m_requestedVersion = v; Q_EMIT metadataChanged(); }
+
+    Q_INVOKABLE void requestInstallVersion(const QString &version);
+    Q_INVOKABLE void requestReinstall();
     
     // USE flag management
     QStringList installedUseFlags() const { return m_installedUseFlags; }
@@ -104,8 +115,6 @@ Q_SIGNALS:
     void metadataChanged();
 
 private:
-    static const QStringList s_topObjects;
-    
     QString m_atom;
     QString m_category;
     QString m_packageName;
@@ -124,6 +133,9 @@ private:
     QStringList m_configuredUseFlags;   // User-configured USE flags (from /etc/portage/package.use)
     
     QString m_keyword;
+
+    QStringList m_availableVersions;
+    QString m_requestedVersion;
 
     QString m_longDescription;
     QString m_ebuildDescription;

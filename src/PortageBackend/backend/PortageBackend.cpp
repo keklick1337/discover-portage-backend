@@ -4,6 +4,7 @@
  */
 
 #include "PortageBackend.h"
+#include "PortageQmlInjector.h"
 #include "../resources/PortageResource.h"
 #include "../transaction/PortageTransaction.h"
 
@@ -13,6 +14,12 @@
 #include <KPluginFactory>
 #include <QDebug>
 #include <QTimer>
+#include <QInputDialog>
+#include <QQmlEngine>
+#include <QJSEngine>
+#include <QGuiApplication>
+#include <QCoreApplication>
+#include <QWindow>
 #include "repository/PortageRepositoryReader.h"
 #include "installed/PortageInstalledReader.h"
 
@@ -21,6 +28,7 @@ DISCOVER_BACKEND_PLUGIN(PortageBackend)
 PortageBackend::PortageBackend(QObject *parent)
     : AbstractResourcesBackend(parent)
     , m_updater(new StandardBackendUpdater(this))
+    , m_qmlInjector(new PortageQmlInjector(this))
     , m_initialized(false)
 {
     qDebug() << "Portage: Initializing backend";
@@ -76,7 +84,66 @@ PortageBackend::PortageBackend(QObject *parent)
 
     m_initialized = true;
     qDebug() << "Portage: Backend initialized with" << m_resources.size() << "packages";
+    
+    // DANGER: Register QML type directly without finding engine
+    // This makes PortageQmlInjector available as "import org.kde.discover.portage 1.0"
+    qmlRegisterSingletonType<PortageQmlInjector>(
+        "org.kde.discover.portage",
+        1, 0,
+        "PortageInjector",
+        [this](QQmlEngine *engine, QJSEngine *) -> QObject * {
+            qDebug() << "PortageBackend: QML singleton PortageInjector created!";
+            m_qmlInjector->setQmlEngine(engine);
+            return m_qmlInjector;
+        }
+    );
+    
     Q_EMIT contentsChanged();
+}
+
+void PortageBackend::setupQmlInjector()
+{
+    QQmlEngine *engine = nullptr;
+    
+    // Method 1: Search all QML engines in entire app
+    auto engines = QCoreApplication::instance()->findChildren<QQmlEngine*>();
+    if (!engines.isEmpty()) {
+        engine = engines.first();
+        qDebug() << "PortageBackend: Found" << engines.size() << "QML engine(s) via findChildren";
+    }
+    
+    // Method 2: If not found, try top-level windows
+    if (!engine) {
+        const auto topLevelObjects = qApp->topLevelWindows();
+        for (QWindow *window : topLevelObjects) {
+            QObject *obj = qobject_cast<QObject*>(window);
+            if (!obj) {
+                continue;
+            }
+            
+            engine = qvariant_cast<QQmlEngine*>(obj->property("engine"));
+            if (engine) {
+                qDebug() << "PortageBackend: Found QML engine via window property";
+                break;
+            }
+
+            const auto children = obj->findChildren<QQmlEngine*>();
+            if (!children.isEmpty()) {
+                engine = children.first();
+                qDebug() << "PortageBackend: Found QML engine via window children";
+                break;
+            }
+        }
+    }
+    
+    if (engine) {
+        qDebug() << "PortageBackend: Setting up QML injector with engine";
+        m_qmlInjector->setQmlEngine(engine);
+    } else {
+        qDebug() << "PortageBackend: QML engine not found yet, will retry";
+        
+        QTimer::singleShot(1000, this, &PortageBackend::setupQmlInjector);
+    }
 }
 
 QString PortageBackend::displayName() const
@@ -251,7 +318,52 @@ void PortageBackend::checkForUpdates()
 Transaction *PortageBackend::installApplication(AbstractResource *app)
 {
     qDebug() << "Portage: installApplication()" << app->name();
-    return new PortageTransaction(qobject_cast<PortageResource *>(app), Transaction::InstallRole);
+    
+    PortageResource *portageRes = qobject_cast<PortageResource *>(app);
+    if (!portageRes) {
+        return new PortageTransaction(portageRes, Transaction::InstallRole);
+    }
+    
+    // Only show version dialog if version not already selected
+    if (portageRes->requestedVersion().isEmpty()) {
+        // Get available versions
+        QStringList versions = portageRes->availableVersions();
+        
+        // If multiple versions available, show selection dialog
+        if (versions.size() > 1) {
+            // TODO: Add USE flags editing in this dialog
+            // Show checkboxes for USE flags: enabled/disabled/default
+            // Allow user to add custom USE flags before installation
+            
+            bool ok = false;
+            QString selectedVersion = QInputDialog::getItem(
+                nullptr,
+                i18n("Select Version"),
+                i18n("Choose a version to install for %1:", app->name()),
+                versions,
+                0, // default to first (latest)
+                false, // not editable
+                &ok
+            );
+            
+            if (!ok) {
+                // User cancelled - abort installation
+                qDebug() << "Portage: Installation cancelled by user";
+                return nullptr;
+            }
+            
+            if (!selectedVersion.isEmpty()) {
+                portageRes->requestInstallVersion(selectedVersion);
+            }
+            // Continue with installation after setting version
+        } else if (versions.size() == 1) {
+            // Auto-select single version
+            portageRes->requestInstallVersion(versions.first());
+        }
+        // else: no versions, proceed with default behavior
+    }
+    
+    return new PortageTransaction(portageRes, Transaction::InstallRole);
 }
 
 Transaction *PortageBackend::installApplication(AbstractResource *app, const AddonList &addons)

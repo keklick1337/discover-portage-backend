@@ -66,9 +66,10 @@ To build against a different version of Discover, update the version in `src/Dis
 - [x] Implement portage backend service with KAuth
 - [x] Implement actual package installation
 - [x] Implement package removal
-- [ ] Implement version selecting for install
+- [x] Implement version selecting for install
 - [ ] Add update check functionality
 - [ ] Implement package updates
+- [x] QML injector to top bar
 
 ### USE Flags
 
@@ -91,8 +92,8 @@ To build against a different version of Discover, update the version in `src/Dis
 
 ### Advanced Features
 
-- [x] Package masking
-- [ ] Package unmasking
+- [ ] Package masking
+- [x] Package unmasking
 - [ ] Tasks lists and task monitoring
 - [ ] Package search by description
 - [ ] Message box with error details

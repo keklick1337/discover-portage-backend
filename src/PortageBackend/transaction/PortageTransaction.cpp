@@ -76,7 +76,24 @@ void PortageTransaction::proceed()
     if (role() == InstallRole) {
         qDebug() << "Portage: Starting installation of" << atom;
         // First check dependencies
-        m_emergeRunner->checkDependencies(atom);
+        // If a specific version was requested via UI, use exact versioned atom
+        QString requested = m_resource->requestedVersion();
+        if (!requested.isEmpty()) {
+            QString exact = QStringLiteral("=") + atom + QStringLiteral("-") + requested;
+            qDebug() << "Portage: Requested exact version:" << exact;
+            m_emergeRunner->checkDependencies(exact);
+        } else {
+            // Auto-select first available version if available
+            QStringList availableVersions = m_resource->availableVersions();
+            if (!availableVersions.isEmpty()) {
+                QString autoVersion = availableVersions.first();
+                QString exact = QStringLiteral("=") + atom + QStringLiteral("-") + autoVersion;
+                qDebug() << "Portage: Auto-selected version:" << exact;
+                m_emergeRunner->checkDependencies(exact);
+            } else {
+                m_emergeRunner->checkDependencies(atom);
+            }
+        }
     } else if (role() == RemoveRole) {
         // For removal, use exact installed version to avoid removing wrong slots
         QString installedVersion = m_resource->installedVersion();
@@ -109,7 +126,12 @@ void PortageTransaction::onEmergeFinished(bool success, int exitCode)
     if (success) {
         if (role() == InstallRole) {
             m_resource->setState(AbstractResource::Installed);
-            m_resource->setInstalledVersion(m_resource->availableVersion());
+            // If we requested a specific version, record that, else use availableVersion
+            if (!m_resource->requestedVersion().isEmpty()) {
+                m_resource->setInstalledVersion(m_resource->requestedVersion());
+            } else {
+                m_resource->setInstalledVersion(m_resource->availableVersion());
+            }
         } else if (role() == RemoveRole) {
             m_resource->setState(AbstractResource::None);
             m_resource->setInstalledVersion(QString());

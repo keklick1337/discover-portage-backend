@@ -120,7 +120,8 @@ void EmergeRunner::installPackage(const QString &atom, const QStringList &useFla
     
     QStringList emergeArgs;
     emergeArgs << QStringLiteral("--verbose")
-               << QStringLiteral("--noreplace");
+               << QStringLiteral("--noreplace")
+               << QStringLiteral("--newuse");
     
     if (!useFlags.isEmpty()) {
         // TODO: Set USE flags via package.use before emerge

@@ -59,31 +59,34 @@ void PortageRepositoryReader::scanRepositoryPath(const QString &path)
             PortageResource *res = new PortageResource(atom, pkg, QString(), m_backend);
             res->setRepository(repoName);
             
-            QString latestVersion = findLatestVersion(pkgInfo.absoluteFilePath(), pkg);
-            if (!latestVersion.isEmpty()) {
-                res->setAvailableVersion(latestVersion);
-            }
+            // Don't load versions here
+            // Versions will be loaded lazily when user opens package page
+            // TODO: Add versions caching mechanism if needed
             
             m_packages.insert(atom, res);
         }
     }
 }
 
-QString PortageRepositoryReader::findLatestVersion(const QString &pkgPath, const QString &pkgName)
+QStringList PortageRepositoryReader::findAvailableVersions(const QString &pkgPath, const QString &pkgName)
 {
     QDir pkgDir(pkgPath);
-    QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files);
-    
-    QString latestVersion;
+    QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files, QDir::Name);
+
+    QStringList versions;
     for (const QString &ebuild : ebuilds) {
         QString version = ebuild;
         version.remove(0, pkgName.length() + 1);
-        version.chop(7);
-        
-        if (latestVersion.isEmpty() || version > latestVersion) {
-            latestVersion = version;
+        if (version.endsWith(QLatin1String(".ebuild"))) {
+            version.chop(7);
+        }
+        if (!version.isEmpty()) {
+            versions << version;
         }
     }
-    
-    return latestVersion;
+
+    // Sort descending (latest first)
+    std::sort(versions.begin(), versions.end(), std::greater<QString>());
+    versions.erase(std::unique(versions.begin(), versions.end()), versions.end());
+    return versions;
 }

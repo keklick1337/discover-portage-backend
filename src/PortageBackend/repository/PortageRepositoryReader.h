@@ -25,6 +25,9 @@ public:
 
     QHash<QString, PortageResource *> packages() const { return m_packages; }
 
+private:
+    QStringList findAvailableVersions(const QString &pkgPath, const QString &pkgName);
+
 Q_SIGNALS:
     void packagesLoaded(int count);
 

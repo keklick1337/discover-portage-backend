@@ -1,5 +1,6 @@
 set(portage-backend_SRCS
     backend/PortageBackend.cpp
+    backend/PortageQmlInjector.cpp
     resources/PortageResource.cpp
     transaction/PortageTransaction.cpp
     resources/PortageUseFlags.cpp
@@ -56,6 +57,8 @@ target_link_libraries(portage-backend
         Qt::Core
         Qt::Widgets
         Qt::Xml
+        Qt::Qml
+        Qt::Quick
         KF6::CoreAddons
         KF6::ConfigCore
         KF6::I18n

@@ -12,8 +12,8 @@
 #include <QFile>
 #include <QXmlStreamReader>
 #include <QDir>
-
-const QStringList PortageResource::s_topObjects({QStringLiteral("qrc:/qml/UseFlagsButton.qml")});
+#include <QInputDialog>
+#include <algorithm>
 
 PortageResource::PortageResource(const QString &atom,
                                  const QString &name,
@@ -30,6 +30,8 @@ PortageResource::PortageResource(const QString &atom,
     , m_state(AbstractResource::None)
     , m_discoverCategories({QStringLiteral("portage_packages")})
     , m_keyword(QStringLiteral("amd64"))
+    , m_availableVersions(QStringList())
+    , m_requestedVersion(QString())
 {
     int slashPos = atom.indexOf(QLatin1Char('/'));
     if (slashPos > 0) {
@@ -42,6 +44,98 @@ PortageResource::PortageResource(const QString &atom,
         m_discoverCategories.insert(m_category);
     }
     //qDebug() << "Portage: Created resource" << m_atom << "category:" << m_category;
+}
+
+void PortageResource::requestInstallVersion(const QString &version)
+{
+    qDebug() << "PortageResource: requestInstallVersion(" << version << ") for" << m_atom;
+    // Just set the version - don't call installApplication again!
+    // installApplication() already called us from the dialog
+    setRequestedVersion(version);
+}
+
+void PortageResource::requestReinstall()
+{
+    qDebug() << "PortageResource: requestReinstall() for" << m_atom;
+    
+    // Get available versions
+    QStringList versions = availableVersions();
+    
+    if (versions.isEmpty()) {
+        qWarning() << "PortageResource: No versions available for reinstall";
+        return;
+    }
+    
+    // Find current installed version in the list
+    int currentIndex = versions.indexOf(m_installedVersion);
+    if (currentIndex < 0) currentIndex = 0;
+    
+    // Show dialog with version selection
+    bool ok = false;
+    QString selectedVersion = QInputDialog::getItem(
+        nullptr,
+        i18n("Reinstall Package"),
+        i18n("Choose version to reinstall for %1:\n(Current: %2)", m_packageName, m_installedVersion),
+        versions,
+        currentIndex,
+        false, // not editable
+        &ok
+    );
+    
+    if (!ok) {
+        qDebug() << "PortageResource: Reinstall cancelled by user";
+        return;
+    }
+    
+    // Only set version - DO NOT call installApplication() directly
+    // Let ResourcesModel.installApplication() handle the transaction
+    // This ensures TransactionListener gets notified properly
+    setRequestedVersion(selectedVersion);
+    
+    qDebug() << "PortageResource: Version selected:" << selectedVersion;
+    qDebug() << "PortageResource: Caller should now call ResourcesModel.installApplication()";
+}
+
+QStringList PortageResource::availableVersions()
+{
+    // Lazy-load versions on first access to avoid scanning 20k+ packages at startup
+    if (m_availableVersions.isEmpty() && !m_repository.isEmpty()) {
+        QString repoPath = QStringLiteral("/var/db/repos/") + m_repository;
+        QString pkgPath = repoPath + QLatin1Char('/') + m_atom;
+        
+        QDir pkgDir(pkgPath);
+        if (!pkgDir.exists()) {
+            return m_availableVersions;
+        }
+        
+        QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files, QDir::Name);
+        
+        QStringList versions;
+        QString pkgName = m_packageName;
+        for (const QString &ebuild : ebuilds) {
+            QString version = ebuild;
+            version.remove(0, pkgName.length() + 1);
+            if (version.endsWith(QLatin1String(".ebuild"))) {
+                version.chop(7);
+            }
+            if (!version.isEmpty()) {
+                versions << version;
+            }
+        }
+        
+        // Sort descending (latest first)
+        std::sort(versions.begin(), versions.end(), std::greater<QString>());
+        versions.erase(std::unique(versions.begin(), versions.end()), versions.end());
+        
+        m_availableVersions = versions;
+        
+        // Also set the latest as available version if not already set
+        if (!versions.isEmpty() && m_availableVersion == QStringLiteral("0.0.0")) {
+            m_availableVersion = versions.first();
+        }
+    }
+    
+    return m_availableVersions;
 }
 
 QString PortageResource::longDescription()
@@ -413,17 +507,10 @@ QList<PackageState> PortageResource::addonsInformation()
 
 QStringList PortageResource::topObjects() const
 {
-    qDebug() << "PortageResource::topObjects() for" << m_atom 
-             << "- available:" << m_availableUseFlags.size()
-             << "installed:" << m_installedUseFlags.size()
-             << "- returning:" << s_topObjects;
-    
-    if (m_availableUseFlags.isEmpty() && m_installedUseFlags.isEmpty()) {
-        qDebug() << "  -> Returning empty (no USE flags)";
-        return {};
-    }
-    qDebug() << "  -> Returning" << s_topObjects;
-    return s_topObjects;
+    return {
+        QStringLiteral("qrc:/qml/PortageActionInjector.qml"),
+        QStringLiteral("qrc:/qml/UseFlagsButton.qml")
+    };
 }
 
 QVariantList PortageResource::useFlagsInformation()

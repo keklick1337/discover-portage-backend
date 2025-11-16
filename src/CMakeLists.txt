@@ -20,6 +20,8 @@ find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS
     Widgets
     Network
     Xml
+    Qml
+    Quick
 )
 
 find_package(KF6 ${KF6_MIN_VERSION} REQUIRED COMPONENTS
