@@ -191,7 +191,7 @@ void EmergeRunner::uninstallPackage(const QString &atom)
                << atom;
     
     args[QStringLiteral("args")] = emergeArgs;
-    args[QStringLiteral("timeout")] = 3600000; // 1 hour timeout
+    args[QStringLiteral("timeout")] = -1;
     
     removeAction.setArguments(args);
     removeAction.setTimeout(-1);

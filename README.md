@@ -66,6 +66,7 @@ To build against a different version of Discover, update the version in `src/Dis
 
 ### High Priority
 
+- [ ] Message box with error details on fail
 - [x] Implement portage backend service with KAuth
 - [x] Implement actual package installation
 - [x] Implement package removal
@@ -78,10 +79,10 @@ To build against a different version of Discover, update the version in `src/Dis
 
 - [x] Read USE flags from installed packages
 - [x] Display available USE flags for installed package
-- [ ] Display available USE flags any package (ebuild parsing?)
+- [x] Display available USE flags any package (portageq answer parsing)
 - [x] Read configured USE flags from `/etc/portage/package.use/`
 - [ ] Display message when USE flags was changed
-- [ ] Write USE flag changes
+- [x] Write USE flag changes
 - [ ] USE flag description tooltips
 - [x] Interactive USE flag editor UI
 - [ ] Validate USE flag conflicts
@@ -101,7 +102,6 @@ To build against a different version of Discover, update the version in `src/Dis
 - [ ] License acceptance management in package.license
 - [ ] Tasks lists and task monitoring
 - [ ] Package search by description
-- [ ] Message box with error details
 - [ ] World file integration
 - [ ] News reader (Gentoo news items)
 - [ ] Sync repository functionality
@@ -129,7 +129,6 @@ To build against a different version of Discover, update the version in `src/Dis
 ### Bugs
 
 - [ ] Application version may not load when opening package details
-- [ ] USE flags display as empty when uninstalling packages
 - [ ] When bulk deleting packages in the Discover interface, they are shown as deleted, but in fact they are not
 
 ## Contributing

@@ -3,6 +3,6 @@
  <qresource>
     <file>qml/PortageActionInjector.qml</file>
     <file>qml/ReinstallAction.qml</file>
-    <file>qml/UseFlagsButton.qml</file>
+    <file>qml/UseFlagsInfo.qml</file>
  </qresource>
 </RCC>

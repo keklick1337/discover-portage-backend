@@ -149,7 +149,7 @@ bool UnmaskManager::writeUnmaskFile(const QStringList &lines) const
 
     KAuth::Action writeAction(QStringLiteral("org.kde.discover.portagebackend.execute"));
     writeAction.setHelperId(QStringLiteral("org.kde.discover.portagebackend"));
-    writeAction.setTimeout(60 * 1000); // 60 seconds
+    writeAction.setTimeout(-1);
     
     QVariantMap args;
     args[QStringLiteral("action")] = QStringLiteral("file.write");

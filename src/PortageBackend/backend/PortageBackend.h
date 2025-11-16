@@ -38,6 +38,9 @@ public:
     AbstractReviewsBackend *reviewsBackend() const override { return nullptr; }
 
     QHash<QString, PortageResource *> resources() const { return m_resources; }
+    
+    // Show version selection and USE flags dialogs, returns false if cancelled
+    bool showInstallDialogs(PortageResource *portageRes);
 
 private:
     void populateTestPackages();

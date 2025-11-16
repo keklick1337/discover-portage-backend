@@ -60,7 +60,7 @@ void PortageAuthClient::emergeSync(ResultCallback callback,
     QStringList args;
     args << QStringLiteral("--sync");
     
-    emergeExecute(args, callback, progress, 6000000); // 100 min timeout for sync
+    emergeExecute(args, callback, progress, -1);
 }
 
 void PortageAuthClient::writeFile(const QString &path,

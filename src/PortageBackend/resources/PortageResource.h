@@ -14,6 +14,7 @@ class PortageResource : public AbstractResource
     Q_PROPERTY(QStringList installedUseFlags READ installedUseFlags NOTIFY useFlagsChanged)
     Q_PROPERTY(QStringList availableUseFlags READ availableUseFlags NOTIFY useFlagsChanged)
     Q_PROPERTY(QStringList configuredUseFlags READ configuredUseFlags WRITE setConfiguredUseFlags NOTIFY useFlagsChanged)
+    Q_PROPERTY(QVariantList useFlagsInformation READ useFlagsInformation NOTIFY useFlagsChanged)
     Q_PROPERTY(QStringList availableVersions READ availableVersions NOTIFY metadataChanged)
     Q_PROPERTY(QString requestedVersion READ requestedVersion WRITE setRequestedVersion NOTIFY metadataChanged)
     Q_PROPERTY(QString slot READ slot NOTIFY metadataChanged)
@@ -67,7 +68,7 @@ public:
     
     QStringList topObjects() const override;
     
-    Q_INVOKABLE QVariantList useFlagsInformation();
+    QVariantList useFlagsInformation();
     
     void setState(State state);
     void setAvailableVersion(const QString &version) { m_availableVersion = version; }

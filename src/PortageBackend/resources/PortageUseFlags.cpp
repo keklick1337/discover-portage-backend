@@ -4,6 +4,7 @@
  */
 
 #include "PortageUseFlags.h"
+#include "config/MakeConfReader.h"
 #include <QFile>
 #include <QDir>
 #include <QTextStream>
@@ -11,6 +12,7 @@
 #include <QRegularExpression>
 #include <QDateTime>
 #include <QFileInfo>
+#include <QProcess>
 
 PortageUseFlags::PortageUseFlags(QObject *parent)
     : QObject(parent)
@@ -60,16 +62,48 @@ UseFlagInfo PortageUseFlags::readInstalledPackageInfo(const QString &atom, const
 
 QString PortageUseFlags::readVarDbFile(const QString &atom, const QString &version, const QString &filename)
 {
-    const QString path = QStringLiteral("/var/db/pkg/%1-%2/%3").arg(atom, version, filename);
-    QFile file(path);
+    // First try exact version match
+    QString exactPath = QStringLiteral("/var/db/pkg/%1-%2/%3").arg(atom, version, filename);
+    QFile exactFile(exactPath);
+    
+    if (exactFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QString content = QString::fromUtf8(exactFile.readAll()).trimmed();
+        exactFile.close();
+        return content;
+    }
+    
+    // If exact match failed, search for version with revision (e.g., 1.2.3-r1)
+    QDir pkgDir(QStringLiteral("/var/db/pkg/%1").arg(atom));
+    if (!pkgDir.exists()) {
+        qDebug() << "PortageUseFlags: Package directory does not exist:" << pkgDir.path();
+        return QString();
+    }
+    
+    // Find directories that start with "version-"
+    QStringList filters;
+    filters << version + QLatin1String("-r*");  // version-r1, version-r2, etc.
+    filters << version;                          // exact version without revision
+    
+    QFileInfoList entries = pkgDir.entryInfoList(filters, QDir::Dirs | QDir::NoDotAndDotDot);
+    
+    if (entries.isEmpty()) {
+        qDebug() << "PortageUseFlags: No matching version found for" << atom << version << "in" << pkgDir.path();
+        return QString();
+    }
+    
+    // Use the first match (should be only one installed version)
+    QString foundPath = entries.first().filePath() + QLatin1Char('/') + filename;
+    QFile file(foundPath);
     
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        qDebug() << "PortageUseFlags: Could not open" << path;
+        qDebug() << "PortageUseFlags: Could not open" << foundPath;
         return QString();
     }
 
     QString content = QString::fromUtf8(file.readAll()).trimmed();
     file.close();
+    
+    qDebug() << "PortageUseFlags: Read" << filename << "from" << foundPath;
     
     return content;
 }
@@ -345,32 +379,74 @@ UseFlagInfo PortageUseFlags::readRepositoryPackageInfo(const QString &atom, cons
     info.version = version;
     info.repository = QFileInfo(repoPath).fileName(); // Extract repo name from path
     
-    // Find ebuild file
-    QString ebuildPath = QStringLiteral("%1/%2/%3-%4.ebuild").arg(repoPath, atom, atom.section(QLatin1Char('/'), -1), version);
+    // Use portageq to get IUSE after ebuild processing (handles dynamic generation like L10N)
+    QProcess portageq;
+    portageq.setProgram(QStringLiteral("portageq"));
+    portageq.setArguments({
+        QStringLiteral("metadata"),
+        QStringLiteral("/"),
+        QStringLiteral("ebuild"),
+        QStringLiteral("%1-%2").arg(atom, version),
+        QStringLiteral("IUSE")
+    });
     
-    QFile ebuildFile(ebuildPath);
-    if (ebuildFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream in(&ebuildFile);
-        QString line;
+    portageq.start();
+    portageq.waitForFinished(10000); // 10 second timeout
+    
+    if (portageq.exitCode() == 0) {
+        QString iuseOutput = QString::fromUtf8(portageq.readAllStandardOutput()).trimmed();
         
-        // Read ebuild line by line to find IUSE
-        while (in.readLineInto(&line)) {
-            if (line.startsWith(QStringLiteral("IUSE="))) {
-                // Extract IUSE value
-                QString iuseLine = line.mid(5).trimmed();
-                
-                // Remove quotes if present
-                if (iuseLine.startsWith(QLatin1Char('"')) && iuseLine.endsWith(QLatin1Char('"'))) {
-                    iuseLine = iuseLine.mid(1, iuseLine.length() - 2);
-                }
-                
-                info.availableFlags = parseIUSE(iuseLine);
-                break;
-            }
-        }
-        ebuildFile.close();
+        // Save raw IUSE with prefixes for defaults
+        info.rawIuse = iuseOutput.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+        
+        // Parse to get clean flag names (without +/-)
+        info.availableFlags = parseIUSE(iuseOutput);
+        
+        qDebug() << "PortageUseFlags: Got" << info.availableFlags.size() << "flags from portageq for" << atom << version;
     } else {
-        qDebug() << "PortageUseFlags: Could not open ebuild" << ebuildPath;
+        // Fallback to reading ebuild file directly (won't catch dynamic flags like L10N)
+        qDebug() << "PortageUseFlags: portageq failed, falling back to ebuild parsing";
+        
+        QString ebuildPath = QStringLiteral("%1/%2/%3-%4.ebuild").arg(repoPath, atom, atom.section(QLatin1Char('/'), -1), version);
+        
+        QFile ebuildFile(ebuildPath);
+        if (ebuildFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&ebuildFile);
+            QString line;
+            QString iuseAccumulated;
+            
+            // Read ebuild line by line to find all IUSE lines (IUSE= and IUSE+=)
+            while (in.readLineInto(&line)) {
+                QString trimmed = line.trimmed();
+                
+                // Match IUSE= or IUSE+=
+                if (trimmed.startsWith(QStringLiteral("IUSE=")) || trimmed.startsWith(QStringLiteral("IUSE+="))) {
+                    // Extract IUSE value
+                    int eqPos = trimmed.indexOf(QLatin1Char('='));
+                    QString iuseLine = trimmed.mid(eqPos + 1).trimmed();
+                    
+                    // Remove quotes if present
+                    if (iuseLine.startsWith(QLatin1Char('"')) && iuseLine.endsWith(QLatin1Char('"'))) {
+                        iuseLine = iuseLine.mid(1, iuseLine.length() - 2);
+                    }
+                    
+                    // Accumulate all IUSE values
+                    if (!iuseAccumulated.isEmpty()) {
+                        iuseAccumulated += QLatin1Char(' ');
+                    }
+                    iuseAccumulated += iuseLine;
+                }
+            }
+            
+            // Parse accumulated IUSE
+            if (!iuseAccumulated.isEmpty()) {
+                info.availableFlags = parseIUSE(iuseAccumulated);
+            }
+            
+            ebuildFile.close();
+        } else {
+            qDebug() << "PortageUseFlags: Could not open ebuild" << ebuildPath;
+        }
     }
     
     // Read metadata.xml for descriptions
@@ -382,4 +458,120 @@ UseFlagInfo PortageUseFlags::readRepositoryPackageInfo(const QString &atom, cons
              << "- Descriptions:" << info.descriptions.size();
     
     return info;
+}
+
+PortageUseFlags::EffectiveUseFlags PortageUseFlags::computeEffectiveUseFlags(const QString &atom, const QString &version, bool isInstalled)
+{
+    EffectiveUseFlags result;
+    
+    // 1. Get IUSE from repository ebuild
+    UseFlagInfo repoInfo = readRepositoryPackageInfo(atom, version);
+    result.iuse = repoInfo.availableFlags;
+    result.descriptions = repoInfo.descriptions;
+    
+    // 2. Start with global USE flags from make.conf
+    MakeConfReader makeConf;
+    QStringList globalUse = makeConf.readGlobalUseFlags();
+    QStringList globalL10n = makeConf.readL10N();
+    
+    QSet<QString> enabledSet;
+    QSet<QString> disabledSet;
+    
+    for (const QString &flag : globalUse) {
+        if (flag.startsWith(QLatin1Char('-'))) {
+            disabledSet.insert(flag.mid(1));
+        } else {
+            enabledSet.insert(flag);
+        }
+    }
+    
+    // 3. Apply IUSE defaults (flags with +/- prefix from portageq)
+    // But SKIP L10N flags - they should only be enabled if in L10N variable
+    for (const QString &rawFlag : repoInfo.rawIuse) {
+        QString cleanFlag;
+        bool isDefault = false;
+        bool isDisabled = false;
+        
+        if (rawFlag.startsWith(QLatin1Char('+'))) {
+            cleanFlag = rawFlag.mid(1);
+            isDefault = true;
+        } else if (rawFlag.startsWith(QLatin1Char('-'))) {
+            cleanFlag = rawFlag.mid(1);
+            isDisabled = true;
+        } else {
+            cleanFlag = rawFlag;
+        }
+        
+        // Special handling for L10N flags
+        if (cleanFlag.startsWith(QStringLiteral("l10n_"))) {
+            // L10N flags are ONLY enabled if they're in global L10N variable
+            if (globalL10n.contains(cleanFlag)) {
+                enabledSet.insert(cleanFlag);
+                disabledSet.remove(cleanFlag);
+            } else {
+                // Not in L10N - disable it
+                disabledSet.insert(cleanFlag);
+                enabledSet.remove(cleanFlag);
+            }
+        } else {
+            // Regular flags - apply IUSE defaults
+            if (isDefault) {
+                enabledSet.insert(cleanFlag);
+                disabledSet.remove(cleanFlag);
+            } else if (isDisabled) {
+                disabledSet.insert(cleanFlag);
+                enabledSet.remove(cleanFlag);
+            }
+        }
+    }
+    
+    // 4. Apply package-specific USE from package.use files
+    QMap<QString, QStringList> packageUse = readPackageUseConfig(atom);
+    for (const QStringList &flags : packageUse) {
+        for (const QString &flag : flags) {
+            if (flag.startsWith(QLatin1Char('-'))) {
+                QString cleanFlag = flag.mid(1);
+                disabledSet.insert(cleanFlag);
+                enabledSet.remove(cleanFlag);
+            } else {
+                enabledSet.insert(flag);
+                disabledSet.remove(flag);
+            }
+        }
+    }
+    
+    // 5. If package is installed, use its actual USE flags as final state
+    if (isInstalled) {
+        UseFlagInfo installedInfo = readInstalledPackageInfo(atom, version);
+        if (!installedInfo.activeFlags.isEmpty()) {
+            // The installed USE flags are the final truth
+            QSet<QString> installedSet(installedInfo.activeFlags.begin(), installedInfo.activeFlags.end());
+            
+            // All IUSE flags not in installed set are disabled
+            enabledSet = installedSet;
+            disabledSet.clear();
+            for (const QString &flag : result.iuse) {
+                if (!enabledSet.contains(flag)) {
+                    disabledSet.insert(flag);
+                }
+            }
+        }
+    }
+    
+    // Convert sets to lists
+    result.enabled = enabledSet.values();
+    result.disabled = disabledSet.values();
+    
+    // Only include flags that are in IUSE
+    QSet<QString> iuseSet(result.iuse.begin(), result.iuse.end());
+    QSet<QString> enabledIuseSet = QSet<QString>(result.enabled.begin(), result.enabled.end()).intersect(iuseSet);
+    QSet<QString> disabledIuseSet = QSet<QString>(result.disabled.begin(), result.disabled.end()).intersect(iuseSet);
+    result.enabled = enabledIuseSet.values();
+    result.disabled = disabledIuseSet.values();
+    
+    qDebug() << "PortageUseFlags: computeEffectiveUseFlags for" << atom << version
+             << "- Enabled:" << result.enabled.size() << "Disabled:" << result.disabled.size()
+             << "- IUSE:" << result.iuse.size();
+    
+    return result;
 }

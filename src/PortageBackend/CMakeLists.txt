@@ -4,11 +4,13 @@ set(portage-backend_SRCS
     resources/PortageResource.cpp
     transaction/PortageTransaction.cpp
     resources/PortageUseFlags.cpp
+    config/MakeConfReader.cpp
     auth/PortageAuthClient.cpp
     repository/PortageRepositoryReader.cpp
     installed/PortageInstalledReader.cpp
     emerge/EmergeRunner.cpp
     emerge/UnmaskManager.cpp
+    dialogs/UseFlagsDialog.cpp
     portageui.qrc
 )
 

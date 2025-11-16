@@ -5,7 +5,9 @@
 
 #include "PortageResource.h"
 #include "../backend/PortageBackend.h"
+#include "../auth/PortageAuthClient.h"
 #include "PortageUseFlags.h"
+#include "../config/MakeConfReader.h"
 #include <KLocalizedString>
 #include <QProcess>
 #include <QDebug>
@@ -58,42 +60,24 @@ void PortageResource::requestReinstall()
 {
     qDebug() << "PortageResource: requestReinstall() for" << m_atom;
     
-    // Get available versions
-    QStringList versions = availableVersions();
-    
-    if (versions.isEmpty()) {
-        qWarning() << "PortageResource: No versions available for reinstall";
+    // Get backend and call installApplication() which will show all dialogs
+    auto *backend = qobject_cast<PortageBackend*>(parent());
+    if (!backend) {
+        qWarning() << "PortageResource: Cannot get backend for reinstall";
         return;
     }
     
-    // Find current installed version in the list
-    int currentIndex = versions.indexOf(m_installedVersion);
-    if (currentIndex < 0) currentIndex = 0;
+    // Clear any previously selected version to force dialog to show
+    setRequestedVersion(QString());
     
-    // Show dialog with version selection
-    bool ok = false;
-    QString selectedVersion = QInputDialog::getItem(
-        nullptr,
-        i18n("Reinstall Package"),
-        i18n("Choose version to reinstall for %1:\n(Current: %2)", m_packageName, m_installedVersion),
-        versions,
-        currentIndex,
-        false, // not editable
-        &ok
-    );
+    // Call installApplication - it will show version + USE flags dialogs
+    Transaction *transaction = backend->installApplication(this);
     
-    if (!ok) {
+    if (transaction) {
+        qDebug() << "PortageResource: Reinstall transaction created, will start automatically";
+    } else {
         qDebug() << "PortageResource: Reinstall cancelled by user";
-        return;
     }
-    
-    // Only set version - DO NOT call installApplication() directly
-    // Let ResourcesModel.installApplication() handle the transaction
-    // This ensures TransactionListener gets notified properly
-    setRequestedVersion(selectedVersion);
-    
-    qDebug() << "PortageResource: Version selected:" << selectedVersion;
-    qDebug() << "PortageResource: Caller should now call ResourcesModel.installApplication()";
 }
 
 QStringList PortageResource::availableVersions()
@@ -425,17 +409,45 @@ bool PortageResource::saveUseFlags(const QStringList &flags)
 {
     qDebug() << "PortageResource::saveUseFlags() - saving flags for" << m_atom << ":" << flags;
     
-    PortageUseFlags useFlagManager;
-    bool success = useFlagManager.writeUseFlags(m_atom, m_packageName, flags);
+    // Filter out L10N flags that are already in make.conf (global L10N setting)
+    // Only write L10N flags if they're being explicitly disabled (start with -)
+    MakeConfReader makeConf;
+    QStringList globalL10n = makeConf.readL10N();
     
-    if (success) {
-        m_configuredUseFlags = flags;
-        qDebug() << "Successfully saved USE flags for" << m_atom;
-    } else {
-        qDebug() << "Failed to save USE flags for" << m_atom;
+    QStringList filteredFlags;
+    for (const QString &flag : flags) {
+        // If it's a disabled L10N flag (starts with -l10n_), keep it
+        if (flag.startsWith(QStringLiteral("-l10n_"))) {
+            filteredFlags << flag;
+        }
+        // If it's an enabled L10N flag that's already in global L10N, skip it
+        else if (flag.startsWith(QStringLiteral("l10n_")) && globalL10n.contains(flag)) {
+            qDebug() << "PortageResource: Skipping L10N flag" << flag << "(already in make.conf)";
+            continue;
+        }
+        // Otherwise, keep the flag
+        else {
+            filteredFlags << flag;
+        }
     }
     
-    return success;
+    qDebug() << "PortageResource: Filtered flags:" << filteredFlags;
+    
+    // Use KAuth to write USE flags with root privileges (asynchronous)
+    auto *authClient = new PortageAuthClient(this);
+    
+    authClient->setUseFlags(m_atom, filteredFlags, [this, authClient, filteredFlags](bool ok, const QString &/*output*/, const QString &error) {
+        if (ok) {
+            qDebug() << "PortageResource: Successfully saved USE flags for" << m_atom;
+            m_configuredUseFlags = filteredFlags;
+        } else {
+            qWarning() << "PortageResource: Failed to save USE flags:" << error;
+        }
+        authClient->deleteLater();
+    });
+    
+    // Return true optimistically - the callback will handle errors
+    return true;
 }
 
 void PortageResource::loadUseFlagInfo()
@@ -467,6 +479,12 @@ void PortageResource::loadUseFlagInfo()
         if (!info.slot.isEmpty()) {
             m_slot = info.slot;
         }
+    } else if (m_state == AbstractResource::None) {
+        // Package was removed - clear USE flags
+        m_installedUseFlags.clear();
+        m_availableUseFlags.clear();
+        m_useFlagDescriptions.clear();
+        qDebug() << "Cleared USE flags for removed package" << m_atom;
     } else {
         // For non-installed packages, read from repository
         QString version = m_availableVersion.isEmpty() ? QStringLiteral("9999") : m_availableVersion;
@@ -498,6 +516,9 @@ void PortageResource::loadUseFlagInfo()
              << "- Installed:" << m_installedUseFlags.size()
              << "Available:" << m_availableUseFlags.size()
              << "Configured:" << m_configuredUseFlags.size();
+    
+    // Emit signal to update UI
+    Q_EMIT useFlagsChanged();
 }
 
 QList<PackageState> PortageResource::addonsInformation()
@@ -509,7 +530,7 @@ QStringList PortageResource::topObjects() const
 {
     return {
         QStringLiteral("qrc:/qml/PortageActionInjector.qml"),
-        QStringLiteral("qrc:/qml/UseFlagsButton.qml")
+        QStringLiteral("qrc:/qml/UseFlagsInfo.qml")
     };
 }
 

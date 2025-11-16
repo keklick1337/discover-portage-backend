@@ -132,9 +132,18 @@ void PortageTransaction::onEmergeFinished(bool success, int exitCode)
             } else {
                 m_resource->setInstalledVersion(m_resource->availableVersion());
             }
+            
+            // Reload USE flags info after installation
+            m_resource->loadUseFlagInfo();
+            qDebug() << "Portage: Reloaded USE flags after installation for" << m_resource->packageName();
+            
         } else if (role() == RemoveRole) {
             m_resource->setState(AbstractResource::None);
             m_resource->setInstalledVersion(QString());
+            
+            // Clear USE flags after removal
+            m_resource->loadUseFlagInfo();
+            qDebug() << "Portage: Cleared USE flags after removal for" << m_resource->packageName();
         }
         setStatus(DoneStatus);
     } else {

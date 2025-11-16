@@ -7,6 +7,7 @@
 #include "PortageQmlInjector.h"
 #include "../resources/PortageResource.h"
 #include "../transaction/PortageTransaction.h"
+#include "../dialogs/UseFlagsDialog.h"
 
 #include <Category/Category.h>
 #include <resources/StandardBackendUpdater.h>
@@ -304,6 +305,69 @@ int PortageBackend::updatesCount() const
     return count;
 }
 
+bool PortageBackend::showInstallDialogs(PortageResource *portageRes)
+{
+    if (!portageRes) {
+        return false;
+    }
+    
+    // Get available versions
+    QStringList versions = portageRes->availableVersions();
+    QString selectedVersion;
+    
+    // Select version
+    if (versions.size() > 1) {
+        // Find current installed version in the list (for reinstall)
+        int currentIndex = versions.indexOf(portageRes->installedVersion());
+        if (currentIndex < 0) currentIndex = 0;
+        
+        bool ok = false;
+        selectedVersion = QInputDialog::getItem(
+            nullptr,
+            i18n("Select Version"),
+            i18n("Choose a version to install for %1:", portageRes->name()),
+            versions,
+            currentIndex,
+            false,
+            &ok
+        );
+        
+        if (!ok) {
+            qDebug() << "Portage: Version selection cancelled by user";
+            return false;
+        }
+    } else if (versions.size() == 1) {
+        selectedVersion = versions.first();
+    } else {
+        qWarning() << "Portage: No versions available";
+        return false;
+    }
+    
+    // Set selected version
+    portageRes->requestInstallVersion(selectedVersion);
+    
+    // Show USE flags dialog
+    UseFlagsDialog useFlagsDialog(portageRes->atom(), selectedVersion);
+    if (useFlagsDialog.exec() == QDialog::Accepted) {
+        QStringList selectedFlags = useFlagsDialog.getSelectedFlags();
+        qDebug() << "Portage: User selected USE flags:" << selectedFlags;
+        
+        // Save USE flags
+        if (!selectedFlags.isEmpty()) {
+            bool saved = portageRes->saveUseFlags(selectedFlags);
+            if (saved) {
+                qDebug() << "Portage: USE flags saved to package.use";
+            } else {
+                qWarning() << "Portage: Failed to save USE flags";
+            }
+        }
+        return true;
+    } else {
+        qDebug() << "Portage: USE flags configuration cancelled";
+        return false;
+    }
+}
+
 AbstractBackendUpdater *PortageBackend::backendUpdater() const
 {
     return m_updater;
@@ -324,43 +388,12 @@ Transaction *PortageBackend::installApplication(AbstractResource *app)
         return new PortageTransaction(portageRes, Transaction::InstallRole);
     }
     
-    // Only show version dialog if version not already selected
+    // Only show dialogs if version not already selected
     if (portageRes->requestedVersion().isEmpty()) {
-        // Get available versions
-        QStringList versions = portageRes->availableVersions();
-        
-        // If multiple versions available, show selection dialog
-        if (versions.size() > 1) {
-            // TODO: Add USE flags editing in this dialog
-            // Show checkboxes for USE flags: enabled/disabled/default
-            // Allow user to add custom USE flags before installation
-            
-            bool ok = false;
-            QString selectedVersion = QInputDialog::getItem(
-                nullptr,
-                i18n("Select Version"),
-                i18n("Choose a version to install for %1:", app->name()),
-                versions,
-                0, // default to first (latest)
-                false, // not editable
-                &ok
-            );
-            
-            if (!ok) {
-                // User cancelled - abort installation
-                qDebug() << "Portage: Installation cancelled by user";
-                return nullptr;
-            }
-            
-            if (!selectedVersion.isEmpty()) {
-                portageRes->requestInstallVersion(selectedVersion);
-            }
-            // Continue with installation after setting version
-        } else if (versions.size() == 1) {
-            // Auto-select single version
-            portageRes->requestInstallVersion(versions.first());
+        if (!showInstallDialogs(portageRes)) {
+            // User cancelled
+            return nullptr;
         }
-        // else: no versions, proceed with default behavior
     }
     
     return new PortageTransaction(portageRes, Transaction::InstallRole);

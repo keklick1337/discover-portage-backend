@@ -12,6 +12,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QProcess>
+#include <QRegularExpression>
 #include <syslog.h>
 
 using namespace KAuth;
@@ -222,10 +223,67 @@ ActionReply PortageAuthHelper::packageUse(const QVariantMap &args)
         return reply;
     }
     
-    QString filePath = QStringLiteral("/etc/portage/package.use/discover");
+    // Extract package name from atom (e.g., "net-misc/remmina" -> "remmina")
+    QString packageName = atom;
+    int slashIndex = atom.lastIndexOf(QLatin1Char('/'));
+    if (slashIndex != -1) {
+        packageName = atom.mid(slashIndex + 1);
+    }
+    
+    // First, remove existing USE flag configurations from all files
+    const QString packageUseDir = QStringLiteral("/etc/portage/package.use");
+    QDir dir(packageUseDir);
+    
+    if (dir.exists()) {
+        const QFileInfoList files = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
+        
+        for (const QFileInfo &fileInfo : files) {
+            QString filePath = fileInfo.absoluteFilePath();
+            
+            // Read file and remove lines with this atom
+            QFile file(filePath);
+            if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                continue;
+            }
+            
+            QStringList lines;
+            QTextStream in(&file);
+            while (!in.atEnd()) {
+                QString line = in.readLine();
+                QString trimmedLine = line.trimmed();
+                
+                // Keep the line if it doesn't contain the atom or is a comment
+                if (trimmedLine.isEmpty() || trimmedLine.startsWith(QLatin1Char('#'))) {
+                    lines << line;
+                } else {
+                    QStringList parts = trimmedLine.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+                    if (parts.isEmpty() || parts.first() != atom) {
+                        lines << line;
+                    }
+                    // else: skip this line (it's for the atom we want to remove)
+                }
+            }
+            file.close();
+            
+            // Rewrite the file without the old entries
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+                syslog(LOG_WARNING, "Failed to rewrite file: %s", qPrintable(filePath));
+                continue;
+            }
+            
+            QTextStream out(&file);
+            for (const QString &line : lines) {
+                out << line << "\n";
+            }
+            file.close();
+        }
+    }
+    
+    // Now add the new configuration to discover_<packagename> file
+    QString targetFile = packageUseDir + QStringLiteral("/discover_") + packageName;
     QString entry = atom + QStringLiteral(" ") + useFlags.join(QLatin1Char(' ')) + QStringLiteral("\n");
     
-    if (appendToPortageFile(filePath, entry)) {
+    if (appendToPortageFile(targetFile, entry)) {
         ActionReply reply = ActionReply::SuccessReply();
         reply.addData(QStringLiteral("atom"), atom);
         reply.addData(QStringLiteral("useFlags"), useFlags);
