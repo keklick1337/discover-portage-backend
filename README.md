@@ -130,6 +130,7 @@ To build against a different version of Discover, update the version in `src/Dis
 
 - [ ] Application version may not load when opening package details
 - [ ] USE flags display as empty when uninstalling packages
+- [ ] When bulk deleting packages in the Discover interface, they are shown as deleted, but in fact they are not
 
 ## Contributing
 
