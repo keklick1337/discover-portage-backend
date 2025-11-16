@@ -37,7 +37,10 @@ target_link_libraries(portage_backend_helper
     Qt::Core
 )
 
-kauth_install_actions(org.kde.discover.portagebackend config/org.kde.discover.portagebackend.policy)
+# Install polkit policy file manually (kauth_install_actions generates empty file)
+install(FILES config/org.kde.discover.portagebackend.policy
+    DESTINATION ${KDE_INSTALL_DATADIR}/polkit-1/actions)
+
 kauth_install_helper_files(portage_backend_helper org.kde.discover.portagebackend root)
 
 install(TARGETS portage_backend_helper DESTINATION ${KAUTH_HELPER_INSTALL_DIR})
@@ -48,7 +51,7 @@ install(FILES config/org.kde.discover.portagebackend.service
 
 # Install DBus policy file
 install(FILES config/org.kde.discover.portagebackend.conf 
-    DESTINATION ${KDE_INSTALL_SYSCONFDIR}/dbus-1/system.d)
+    DESTINATION ${KDE_INSTALL_DATAROOTDIR}/dbus-1/system.d)
 
 kcoreaddons_add_plugin(portage-backend SOURCES ${portage-backend_SRCS} INSTALL_NAMESPACE "discover")
 

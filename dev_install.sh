@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 # Directories
 BUILD_DIR="$(dirname "$(readlink -f "$0")")/build"
 PLUGIN_DIR="/usr/lib64/qt6/plugins/discover"
-KAUTH_HELPER_DIR="/usr/lib64/libexec/kauth"
+KAUTH_HELPER_DIR="/usr/libexec/kf6/kauth"
 POLKIT_ACTIONS_DIR="/usr/share/polkit-1/actions"
 DBUS_SERVICES_DIR="/usr/share/dbus-1/system-services"
 DBUS_POLICY_DIR="/usr/share/dbus-1/system.d"

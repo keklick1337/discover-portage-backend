@@ -79,13 +79,16 @@ install: build
 	@echo ""
 	@echo "=== Installation complete! ==="
 	@echo ""
-	@echo "The plugin has been installed to:"
-	@echo "  Plugin: $$(find $(INSTALL_PREFIX)/lib* -name 'portage-backend.so' 2>/dev/null | head -1 || echo 'Not found yet - may require manual check')"
-	@echo "  Categories: $(INSTALL_PREFIX)/share/libdiscover/categories/portage-backend-categories.xml"
+	@echo "Installed files:"
+	@echo "  Plugin:     $(INSTALL_PREFIX)/lib64/qt6/plugins/discover/portage-backend.so"
+	@echo "  Helper:     $(INSTALL_PREFIX)/libexec/kf6/kauth/portage_backend_helper"
+	@echo "  Policy:     $(INSTALL_PREFIX)/share/polkit-1/actions/org.kde.discover.portagebackend.policy"
+	@echo "  DBus svc:   $(INSTALL_PREFIX)/share/dbus-1/system-services/org.kde.discover.portagebackend.service"
+	@echo "  DBus conf:  $(INSTALL_PREFIX)/share/dbus-1/system.d/org.kde.discover.portagebackend.conf"
 	@echo ""
 	@echo "Next steps:"
-	@echo "  1. Restart Discover: killall plasma-discover 2>/dev/null; plasma-discover &"
-	@echo "  2. Check Settings → Sources in Discover"
+	@echo "  1. Restart DBus: sudo systemctl restart dbus"
+	@echo "  2. Restart Discover: killall plasma-discover 2>/dev/null; plasma-discover &"
 	@echo ""
 
 uninstall:
@@ -96,20 +99,24 @@ uninstall:
 	fi; \
 	if [ "$$(id -u)" -eq 0 ]; then \
 		$$UNINSTALL_CMD || true; \
-		rm -f $(INSTALL_PREFIX)/lib*/qt*/plugins/discover/portage-backend.so; \
-		rm -f $(INSTALL_PREFIX)/lib*/qt6/plugins/discover/portage-backend.so; \
-		rm -f $(INSTALL_PREFIX)/lib64/qt*/plugins/discover/portage-backend.so; \
 		rm -f $(INSTALL_PREFIX)/lib64/qt6/plugins/discover/portage-backend.so; \
+		rm -f $(INSTALL_PREFIX)/libexec/kf6/kauth/portage_backend_helper; \
+		rm -f $(INSTALL_PREFIX)/share/polkit-1/actions/org.kde.discover.portagebackend.policy; \
+		rm -f $(INSTALL_PREFIX)/share/dbus-1/system-services/org.kde.discover.portagebackend.service; \
+		rm -f $(INSTALL_PREFIX)/share/dbus-1/system.d/org.kde.discover.portagebackend.conf; \
 	else \
 		sudo sh -c "$$UNINSTALL_CMD || true"; \
-		sudo rm -f $(INSTALL_PREFIX)/lib*/qt*/plugins/discover/portage-backend.so; \
-		sudo rm -f $(INSTALL_PREFIX)/lib*/qt6/plugins/discover/portage-backend.so; \
-		sudo rm -f $(INSTALL_PREFIX)/lib64/qt*/plugins/discover/portage-backend.so; \
 		sudo rm -f $(INSTALL_PREFIX)/lib64/qt6/plugins/discover/portage-backend.so; \
+		sudo rm -f $(INSTALL_PREFIX)/libexec/kf6/kauth/portage_backend_helper; \
+		sudo rm -f $(INSTALL_PREFIX)/share/polkit-1/actions/org.kde.discover.portagebackend.policy; \
+		sudo rm -f $(INSTALL_PREFIX)/share/dbus-1/system-services/org.kde.discover.portagebackend.service; \
+		sudo rm -f $(INSTALL_PREFIX)/share/dbus-1/system.d/org.kde.discover.portagebackend.conf; \
 	fi
 	@echo ""
 	@echo "=== Uninstallation complete! ==="
-	@echo "Restart Discover to apply changes."
+	@echo "Restart DBus and Discover to apply changes:"
+	@echo "  sudo systemctl restart dbus"
+	@echo "  killall plasma-discover 2>/dev/null; plasma-discover &"
 	@echo ""
 
 clean:
