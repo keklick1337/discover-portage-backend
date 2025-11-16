@@ -1,4 +1,4 @@
 [D-BUS Service]
 Name=org.kde.discover.portagebackend
-Exec=/usr/lib64/libexec/kauth/portage_backend_helper
+Exec=/usr/libexec/kf6/kauth/portage_backend_helper
 User=root
