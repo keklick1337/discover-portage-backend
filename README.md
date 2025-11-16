@@ -29,13 +29,16 @@ make dependencies
 
 # Build everything
 make discover-deps
-make build
+make
 
 # Install
-sudo make install
+make install
 
 # Restart Discover
-killall plasma-discover
+sudo killall plasma-discover
+# Restart helper (if old version is runned)
+sudo killall portage_backend_helper
+
 plasma-discover
 ```
 
