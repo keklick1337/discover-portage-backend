@@ -506,7 +506,7 @@ bool PortageResource::saveUseFlags(const QStringList &flags)
 
 void PortageResource::loadUseFlagInfo()
 {
-    qDebug() << "PortageResource::loadUseFlagInfo() for" << m_atom << "state:" << m_state;
+    //qDebug() << "PortageResource::loadUseFlagInfo() for" << m_atom << "state:" << m_state;
     
     PortageUseFlags useFlagManager;
     
@@ -545,7 +545,7 @@ void PortageResource::loadUseFlagInfo()
         m_installedUseFlags.clear();
         m_availableUseFlags.clear();
         m_useFlagDescriptions.clear();
-        qDebug() << "Cleared USE flags for removed package" << m_atom;
+        //qDebug() << "Cleared USE flags for removed package" << m_atom;
     } else {
         // For non-installed packages, read from repository
         QString version = m_availableVersion.isEmpty() ? QStringLiteral("9999") : m_availableVersion;
@@ -573,10 +573,10 @@ void PortageResource::loadUseFlagInfo()
         m_configuredUseFlags = allConfigured;
     }
     
-    qDebug() << "Loaded USE flag info for" << m_atom 
-             << "- Installed:" << m_installedUseFlags.size()
-             << "Available:" << m_availableUseFlags.size()
-             << "Configured:" << m_configuredUseFlags.size();
+    //qDebug() << "Loaded USE flag info for" << m_atom 
+    //         << "- Installed:" << m_installedUseFlags.size()
+    //         << "Available:" << m_availableUseFlags.size()
+    //         << "Configured:" << m_configuredUseFlags.size();
     
     // Emit signal to update UI
     Q_EMIT useFlagsChanged();

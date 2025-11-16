@@ -11,6 +11,7 @@
 #include <KLocalizedString>
 #include <QTimer>
 #include <QPointer>
+#include <QDir>
 #include <QDebug>
 
 PortageTransaction::PortageTransaction(PortageResource *app, Role role)
@@ -120,24 +121,52 @@ void PortageTransaction::onEmergeFinished(bool success, int exitCode)
     
     if (success) {
         if (role() == InstallRole) {
-            m_resource->setState(AbstractResource::Installed);
-            
-            // Delay loading USE flags to allow /var/db/pkg to be populated
+            // Check if package was really installed before marking as Installed
             QPointer<PortageResource> res = m_resource;
             QTimer::singleShot(500, [res]() {
-                if (res) {
-                    qDebug() << "Portage: Delayed reload of USE flags for" << res->packageName();
+                if (!res) {
+                    qWarning() << "Portage: Resource was deleted before delayed reload";
+                    return;
+                }
+                
+                // Check if package exists in /var/db/pkg
+                QString atom = res->atom();
+                QString varDbPath = QStringLiteral("/var/db/pkg/") + atom;
+                QDir varDbDir(varDbPath);
+                
+                if (varDbDir.exists()) {
+                    qDebug() << "Portage: Package" << atom << "was installed successfully";
+                    res->setState(AbstractResource::Installed);
                     res->loadUseFlagInfo();
                     qDebug() << "Portage: Installation completed for" << res->packageName();
                 } else {
-                    qWarning() << "Portage: Resource was deleted before delayed reload";
+                    // Package directory doesn't exist - check if there's a versioned directory
+                    QString categoryPath = QStringLiteral("/var/db/pkg/") + atom.section(QLatin1Char('/'), 0, 0);
+                    QDir categoryDir(categoryPath);
+                    QString packageName = atom.section(QLatin1Char('/'), 1);
+                    
+                    QStringList installed = categoryDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+                    bool found = false;
+                    for (const QString &dir : installed) {
+                        if (dir.startsWith(packageName + QLatin1Char('-'))) {
+                            qDebug() << "Portage: Found installed package" << dir << "for" << atom;
+                            res->setState(AbstractResource::Installed);
+                            res->loadUseFlagInfo();
+                            found = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!found) {
+                        qWarning() << "Portage: Package" << atom << "was not found in /var/db/pkg after installation";
+                        res->setState(AbstractResource::None);
+                    }
                 }
             });
             
         } else if (role() == RemoveRole) {
             m_resource->setState(AbstractResource::None);
             m_resource->setInstalledVersion(QString());
-            // setInstalledVersion() automatically calls loadUseFlagInfo()
             qDebug() << "Portage: Removal completed for" << m_resource->packageName();
         }
         setStatus(DoneStatus);
