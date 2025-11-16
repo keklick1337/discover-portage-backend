@@ -104,6 +104,20 @@ To build against a different version of Discover, update the version in `src/Dis
 - [ ] News reader (Gentoo news items)
 - [ ] Sync repository functionality
 
+### Overlays Management
+
+- [ ] Display installed overlays
+- [ ] Refresh package list from overlays
+- [ ] Add new overlays
+- [ ] Remove overlays
+- [ ] Overlay metadata display
+- [x] Search packages across overlays
+
+### Bugs
+
+- [ ] Application version may not load when opening package details
+- [ ] USE flags display as empty when uninstalling packages
+
 ## Contributing
 
 Contributions are welcome! This project is open for community contributions.
