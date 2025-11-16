@@ -42,16 +42,6 @@ sudo killall portage_backend_helper
 plasma-discover
 ```
 
-### Manual Installation
-
-For development, use `dev_install.sh` script that creates symlinks:
-
-```bash
-make build
-sudo ./dev_install.sh
-# After changes: make && killall plasma-discover && plasma-discover
-```
-
 ### Building for Different Discover Versions
 
 To build against a different version of Discover, update the version in `src/DiscoverConfig.h`:
