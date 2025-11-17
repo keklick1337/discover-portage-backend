@@ -1,4 +1,0 @@
-[submodule "discover"]
-	path = discover
-	url = https://github.com/KDE/discover.git
-	branch = v6.4.5
