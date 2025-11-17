@@ -4,7 +4,7 @@
 .PHONY: all build install clean help dependencies uninstall rebuild test check debug info
 
 # Variables
-BUILD_DIR := build
+BUILD_DIR ?= build
 SRC_DIR := src
 INSTALL_PREFIX := /usr
 BUILD_TYPE := Release
