@@ -8,6 +8,7 @@
 #include "../auth/PortageAuthClient.h"
 #include "PortageUseFlags.h"
 #include "../config/MakeConfReader.h"
+#include "../repository/PortageRepositoryReader.h"
 #include <KLocalizedString>
 #include <QProcess>
 #include <QDebug>
@@ -88,26 +89,11 @@ QString PortageResource::availableVersion() const
     }
     
     // For non-installed packages, check if multiple versions available
-    if (!m_repository.isEmpty()) {
-        QString repoPath = QStringLiteral("/var/db/repos/") + m_repository;
-        QString pkgPath = repoPath + QLatin1Char('/') + m_atom;
-        
-        QDir pkgDir(pkgPath);
-        if (pkgDir.exists()) {
-            QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files, QDir::Name);
-            if (ebuilds.size() > 1) {
-                return QStringLiteral("multiple versions");
-            } else if (ebuilds.size() == 1) {
-                // Extract version from single ebuild
-                QString ebuild = ebuilds.first();
-                QString version = ebuild;
-                version.remove(0, m_packageName.length() + 1);
-                if (version.endsWith(QLatin1String(".ebuild"))) {
-                    version.chop(7);
-                }
-                return version;
-            }
-        }
+    QStringList versions = PortageRepositoryReader::getAvailableVersions(m_atom, m_repository);
+    if (versions.size() > 1) {
+        return QStringLiteral("multiple versions");
+    } else if (versions.size() == 1) {
+        return versions.first();
     }
     
     return m_availableVersion;
@@ -127,39 +113,12 @@ QString PortageResource::installedVersion() const
 QStringList PortageResource::availableVersions()
 {
     // Lazy-load versions on first access to avoid scanning 20k+ packages at startup
-    if (m_availableVersions.isEmpty() && !m_repository.isEmpty()) {
-        QString repoPath = QStringLiteral("/var/db/repos/") + m_repository;
-        QString pkgPath = repoPath + QLatin1Char('/') + m_atom;
-        
-        QDir pkgDir(pkgPath);
-        if (!pkgDir.exists()) {
-            return m_availableVersions;
-        }
-        
-        QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files, QDir::Name);
-        
-        QStringList versions;
-        QString pkgName = m_packageName;
-        for (const QString &ebuild : ebuilds) {
-            QString version = ebuild;
-            version.remove(0, pkgName.length() + 1);
-            if (version.endsWith(QLatin1String(".ebuild"))) {
-                version.chop(7);
-            }
-            if (!version.isEmpty()) {
-                versions << version;
-            }
-        }
-        
-        // Sort descending (latest first)
-        std::sort(versions.begin(), versions.end(), std::greater<QString>());
-        versions.erase(std::unique(versions.begin(), versions.end()), versions.end());
-        
-        m_availableVersions = versions;
+    if (m_availableVersions.isEmpty()) {
+        m_availableVersions = PortageRepositoryReader::getAvailableVersions(m_atom, m_repository);
         
         // Also set the latest as available version if not already set
-        if (!versions.isEmpty() && m_availableVersion == QStringLiteral("0.0.0")) {
-            m_availableVersion = versions.first();
+        if (!m_availableVersions.isEmpty() && m_availableVersion == QStringLiteral("0.0.0")) {
+            m_availableVersion = m_availableVersions.first();
         }
     }
     
@@ -278,29 +237,11 @@ void PortageResource::setInstalledVersion(const QString &version)
 void PortageResource::loadMetadata()
 {
     // Try to read metadata.xml (maintainer, USE descriptions)
-    // Search across all repositories in /var/db/repos/
-    QString pkgDirPath;
+    QString pkgDirPath = PortageRepositoryReader::findPackagePath(m_atom, m_repository);
     
-    // If we know the repository, check there first
-    if (!m_repository.isEmpty()) {
-        const QString repoPath = QStringLiteral("/var/db/repos/") + m_repository + QStringLiteral("/") + m_atom;
-        if (QDir(repoPath).exists()) {
-            pkgDirPath = repoPath;
-        }
-    }
-    
-    // Otherwise, search all repositories
-    if (pkgDirPath.isEmpty()) {
-        QDir reposDir(QStringLiteral("/var/db/repos"));
-        const QStringList repos = reposDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-        for (const QString &repo : repos) {
-            const QString testPath = QStringLiteral("/var/db/repos/") + repo + QStringLiteral("/") + m_atom;
-            if (QDir(testPath).exists()) {
-                pkgDirPath = testPath;
-                m_repository = repo; // remember which repo we found it in
-                break;
-            }
-        }
+    // If found and repository wasn't set, update it
+    if (!pkgDirPath.isEmpty() && m_repository.isEmpty()) {
+        m_repository = PortageRepositoryReader::findPackageRepository(m_atom);
     }
     
     if (pkgDirPath.isEmpty()) {
@@ -308,82 +249,102 @@ void PortageResource::loadMetadata()
         return;
     }
 
+    parseMetadataXml(pkgDirPath);
+    parseEbuildDescription(pkgDirPath);
+    m_longDescription = formatLongDescription();
+}
+
+void PortageResource::parseMetadataXml(const QString &pkgDirPath)
+{
     QFile file(pkgDirPath + QStringLiteral("/metadata.xml"));
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QXmlStreamReader xml(&file);
-        while (!xml.atEnd()) {
-            xml.readNext();
-            if (xml.isStartElement()) {
-                if (xml.name() == QLatin1String("maintainer")) {
-                    // inside maintainer block - collect one maintainer
-                    QString mEmail, mName;
-                    while (!(xml.isEndElement() && xml.name() == QLatin1String("maintainer"))) {
-                        xml.readNext();
-                        if (xml.isStartElement()) {
-                            if (xml.name() == QLatin1String("email")) {
-                                mEmail = xml.readElementText(QXmlStreamReader::IncludeChildElements).simplified();
-                            } else if (xml.name() == QLatin1String("name")) {
-                                mName = xml.readElementText(QXmlStreamReader::IncludeChildElements).simplified();
-                            }
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return;
+    }
+    
+    QXmlStreamReader xml(&file);
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isStartElement()) {
+            if (xml.name() == QLatin1String("maintainer")) {
+                // inside maintainer block - collect one maintainer
+                QString mEmail, mName;
+                while (!(xml.isEndElement() && xml.name() == QLatin1String("maintainer"))) {
+                    xml.readNext();
+                    if (xml.isStartElement()) {
+                        if (xml.name() == QLatin1String("email")) {
+                            mEmail = xml.readElementText(QXmlStreamReader::IncludeChildElements).simplified();
+                        } else if (xml.name() == QLatin1String("name")) {
+                            mName = xml.readElementText(QXmlStreamReader::IncludeChildElements).simplified();
                         }
                     }
-                    // Store this maintainer
-                    if (!mEmail.isEmpty()) {
-                        m_maintainerEmails.append(mEmail);
-                    }
-                    if (!mName.isEmpty()) {
-                        m_maintainerNames.append(mName);
-                    }
-                } else if (xml.name() == QLatin1String("flag")) {
-                    const QString fname = xml.attributes().value(QLatin1String("name")).toString();
-                    const QString fdesc = xml.readElementText(QXmlStreamReader::IncludeChildElements).simplified();
-                    if (!fname.isEmpty()) {
-                        m_useFlagDescriptions.insert(fname, fdesc);
-                    }
+                }
+                // Store this maintainer
+                if (!mEmail.isEmpty()) {
+                    m_maintainerEmails.append(mEmail);
+                }
+                if (!mName.isEmpty()) {
+                    m_maintainerNames.append(mName);
+                }
+            } else if (xml.name() == QLatin1String("flag")) {
+                const QString fname = xml.attributes().value(QLatin1String("name")).toString();
+                const QString fdesc = xml.readElementText(QXmlStreamReader::IncludeChildElements).simplified();
+                if (!fname.isEmpty()) {
+                    m_useFlagDescriptions.insert(fname, fdesc);
                 }
             }
         }
-        if (xml.hasError()) {
-            qDebug() << "Portage: XML parse error for" << m_atom << ":" << xml.errorString();
-        }
-        file.close();
     }
+    
+    if (xml.hasError()) {
+        qDebug() << "Portage: XML parse error for" << m_atom << ":" << xml.errorString();
+    }
+    file.close();
+}
 
-    // Try to read DESCRIPTION from the latest ebuild in the package directory
+void PortageResource::parseEbuildDescription(const QString &pkgDirPath)
+{
     QDir pkgDir(pkgDirPath);
-    if (pkgDir.exists()) {
-        const QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files, QDir::Name);
-        if (!ebuilds.isEmpty()) {
-            // pick the lexicographically last ebuild (usually newest)
-            const QString ebuildFile = pkgDir.absoluteFilePath(ebuilds.last());
-            QFile ef(ebuildFile);
-            if (ef.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                const QString contents = QString::fromUtf8(ef.readAll());
-                // Match DESCRIPTION="..." or DESCRIPTION='...' - may be multiline
-                // Using non-greedy match and DOTALL-like behavior
-                // TODO: improve to handle escaped quotes inside description?
-                QRegularExpression re(QStringLiteral(R"(DESCRIPTION\s*=\s*[\"']([^\"']*)[\"'])"));
-                QRegularExpressionMatch match = re.match(contents);
-                if (match.hasMatch()) {
-                    QString desc = match.captured(1);
-                    // Normalize whitespace: replace newlines/tabs with spaces, collapse multiple spaces
-                    desc = desc.simplified();
-                    if (!desc.isEmpty()) {
-                        m_ebuildDescription = desc;
-                    }
-                }
-                ef.close();
-            }
+    if (!pkgDir.exists()) {
+        return;
+    }
+    
+    const QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files, QDir::Name);
+    if (ebuilds.isEmpty()) {
+        return;
+    }
+    
+    // pick the lexicographically last ebuild (usually newest)
+    const QString ebuildFile = pkgDir.absoluteFilePath(ebuilds.last());
+    QFile ef(ebuildFile);
+    if (!ef.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return;
+    }
+    
+    const QString contents = QString::fromUtf8(ef.readAll());
+    // Match DESCRIPTION="..." or DESCRIPTION='...' - may be multiline
+    // Using non-greedy match and DOTALL-like behavior
+    QRegularExpression re(QStringLiteral(R"(DESCRIPTION\s*=\s*[\"']([^\"']*)[\"'])"));
+    QRegularExpressionMatch match = re.match(contents);
+    if (match.hasMatch()) {
+        QString desc = match.captured(1);
+        // Normalize whitespace: replace newlines/tabs with spaces, collapse multiple spaces
+        desc = desc.simplified();
+        if (!desc.isEmpty()) {
+            m_ebuildDescription = desc;
         }
     }
+    ef.close();
+}
 
+QString PortageResource::formatLongDescription()
+{
     QStringList parts;
 
     // Prefer ebuild DESCRIPTION when present, fall back to summary
     const QString descriptionText = !m_ebuildDescription.isEmpty() ? m_ebuildDescription : m_summary;
     parts << QStringLiteral("<div>") + descriptionText.toHtmlEscaped() + QStringLiteral("</div>");
 
-    if (!m_maintainerNames.isEmpty() || !m_maintainerEmails.isEmpty()) {
+    if (hasMaintainerInfo()) {
         parts << QStringLiteral("<p><strong>Maintainer(s):</strong></p>");
         parts << QStringLiteral("<ul>");
 
@@ -418,7 +379,12 @@ void PortageResource::loadMetadata()
         parts << QStringLiteral("</ul>");
     }
 
-    m_longDescription = parts.join(QStringLiteral("\n"));
+    return parts.join(QStringLiteral("\n"));
+}
+
+bool PortageResource::hasMaintainerInfo() const
+{
+    return !m_maintainerNames.isEmpty() || !m_maintainerEmails.isEmpty();
 }
 
 void PortageResource::setConfiguredUseFlags(const QStringList &flags)
@@ -468,6 +434,7 @@ bool PortageResource::saveUseFlags(const QStringList &flags)
     MakeConfReader makeConf;
     QStringList globalL10n = makeConf.readL10N();
     QStringList globalUse = makeConf.readGlobalUseFlags();
+    QStringList packageUseGlobal = makeConf.readGlobalPackageUse();
     
     QStringList filteredFlags;
     for (const QString &flag : flags) {
@@ -478,8 +445,8 @@ bool PortageResource::saveUseFlags(const QStringList &flags)
             qDebug() << "PortageResource: Skipping L10N flag" << flag << "(already in make.conf)";
             continue;
         }
-        else if (globalUse.contains(flag)) {
-            qDebug() << "PortageResource: Skipping USE flag" << flag << "(already in make.conf)";
+        else if (globalUse.contains(flag) || packageUseGlobal.contains(flag)) {
+            qDebug() << "PortageResource: Skipping USE flag" << flag << "(already global)";
             continue;
         }
         else {
@@ -488,6 +455,13 @@ bool PortageResource::saveUseFlags(const QStringList &flags)
     }
     
     qDebug() << "PortageResource: Filtered flags:" << filteredFlags;
+    
+    // If all flags were filtered out (all are already global), no need to write to package.use
+    if (filteredFlags.isEmpty()) {
+        qDebug() << "PortageResource: All USE flags are already global, skipping package.use write";
+        m_configuredUseFlags.clear();
+        return true;
+    }
     
     auto *authClient = new PortageAuthClient(this);
     
@@ -549,7 +523,22 @@ void PortageResource::loadUseFlagInfo()
     } else {
         // For non-installed packages, read from repository
         QString version = m_availableVersion.isEmpty() ? QStringLiteral("9999") : m_availableVersion;
-        QString repoPath = m_repository.isEmpty() ? QStringLiteral("/var/db/repos/gentoo") : QStringLiteral("/var/db/repos/") + m_repository;
+        
+        // Find repository path using PortageRepositoryReader
+        QString repoPath;
+        if (!m_repository.isEmpty()) {
+            repoPath = QStringLiteral("/var/db/repos/") + m_repository;
+        } else {
+            // Try to find package in any repository
+            QString foundRepo = PortageRepositoryReader::findPackageRepository(m_atom);
+            if (!foundRepo.isEmpty()) {
+                m_repository = foundRepo;
+                repoPath = QStringLiteral("/var/db/repos/") + foundRepo;
+            } else {
+                // Default to gentoo repository
+                repoPath = QStringLiteral("/var/db/repos/gentoo");
+            }
+        }
         
         UseFlagInfo info = useFlagManager.readRepositoryPackageInfo(m_atom, version, repoPath);
         

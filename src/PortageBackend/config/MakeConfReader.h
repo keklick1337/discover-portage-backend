@@ -18,10 +18,15 @@ public:
     
     QStringList readL10N() const;
     
+    // Read global USE flags from package.use files (*/* use_flag)
+    QStringList readGlobalPackageUse() const;
+    
     QString readVariable(const QString &variableName) const;
     
 private:
     QString parseVariable(const QString &filePath, const QString &variableName) const;
+    void parsePackageUseFile(const QString &filePath, QStringList &globalFlags) const;
     
     static constexpr const char *MAKE_CONF_PATH = "/etc/portage/make.conf";
+    static constexpr const char *PACKAGE_USE_DIR = "/etc/portage/package.use";
 };

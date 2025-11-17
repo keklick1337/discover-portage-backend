@@ -321,9 +321,20 @@ EmergeRunner::EmergeResult EmergeRunner::parsePretendOutput(const QString &outpu
     // 2) Ebuild processing lines that include the ebuild indicator and may contain USE="..."
     QStringList lines = output.split(QLatin1Char('\n'));
 
+    // Matches: "  - category/package-version::repo (masked by: ~arch keyword)"
+    // Groups: 1=atom, 2=reason
     QRegularExpression maskedLineRe(QStringLiteral(R"(^\s*-\s*([^\s]+).*\(masked by:\s*([^\)]+)\))"));
+    
+    // Matches: "[ebuild  N    ] category/package-version USE=..."
+    // Groups: 1=atom, 2=rest (including USE flags)
     QRegularExpression ebuildLineRe(QStringLiteral(R"(^\s*\[ebuild[^\]]*\]\s+([^\s]+)(.*)$)"));
+    
+    // Matches: USE="flag1 flag2" or USE_FLAGS='flag1 flag2'
+    // Groups: 1=flags string
     QRegularExpression useRe(QStringLiteral(R"((?:USE|USE_FLAGS)=['\"]([^'\"]*)['\"])"));
+    
+    // Matches: category/package-version to extract version
+    // Groups: 1=name, 2=version
     QRegularExpression versionRe(QStringLiteral(R"(^(.+?)-([\d].*)$)"));
 
     for (const QString &line : lines) {

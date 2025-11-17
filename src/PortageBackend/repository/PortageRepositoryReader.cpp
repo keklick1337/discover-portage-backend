@@ -6,6 +6,7 @@
 #include "PortageRepositoryReader.h"
 #include "../backend/PortageBackend.h"
 #include "../resources/PortageResource.h"
+#include "../utils/AtomParser.h"
 
 #include <QDir>
 #include <QDebug>
@@ -90,3 +91,93 @@ QStringList PortageRepositoryReader::findAvailableVersions(const QString &pkgPat
     versions.erase(std::unique(versions.begin(), versions.end()), versions.end());
     return versions;
 }
+
+// Static helper: Get all repository names from /var/db/repos
+QStringList PortageRepositoryReader::getAllRepositories()
+{
+    QDir reposDir(QStringLiteral("/var/db/repos"));
+    if (!reposDir.exists()) {
+        return QStringList();
+    }
+    
+    return reposDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+}
+
+// Static helper: Find which repository contains a package
+QString PortageRepositoryReader::findPackageRepository(const QString &atom)
+{
+    QDir reposDir(QStringLiteral("/var/db/repos"));
+    if (!reposDir.exists()) {
+        return QString();
+    }
+    
+    const QStringList repos = reposDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &repo : repos) {
+        QString testPath = QStringLiteral("/var/db/repos/%1/%2").arg(repo, atom);
+        if (QDir(testPath).exists()) {
+            return repo;
+        }
+    }
+    
+    return QString();
+}
+
+// Static helper: Get full path to package in repository
+QString PortageRepositoryReader::findPackagePath(const QString &atom, const QString &repository)
+{
+    QString repo = repository;
+    
+    // If no repository specified, find it
+    if (repo.isEmpty()) {
+        repo = findPackageRepository(atom);
+        if (repo.isEmpty()) {
+            return QString();
+        }
+    }
+    
+    QString pkgPath = QStringLiteral("/var/db/repos/%1/%2").arg(repo, atom);
+    if (QDir(pkgPath).exists()) {
+        return pkgPath;
+    }
+    
+    return QString();
+}
+
+// Static helper: Check if package exists in repository
+bool PortageRepositoryReader::packageExistsInRepo(const QString &atom, const QString &repository)
+{
+    return !findPackagePath(atom, repository).isEmpty();
+}
+
+// Static helper: Get available versions for a package
+QStringList PortageRepositoryReader::getAvailableVersions(const QString &atom, const QString &repository)
+{
+    QString pkgPath = findPackagePath(atom, repository);
+    if (pkgPath.isEmpty()) {
+        return QStringList();
+    }
+    
+    QString pkgName = AtomParser::extractPackageName(atom);
+    
+    QDir pkgDir(pkgPath);
+    QStringList ebuilds = pkgDir.entryList(QStringList() << QStringLiteral("*.ebuild"), QDir::Files, QDir::Name);
+    
+    QStringList versions;
+    for (const QString &ebuild : ebuilds) {
+        QString version = ebuild;
+        version.remove(0, pkgName.length() + 1);
+        if (version.endsWith(QLatin1String(".ebuild"))) {
+            version.chop(7);
+        }
+        if (!version.isEmpty()) {
+            versions << version;
+        }
+    }
+    
+    // Sort descending (latest first)
+    std::sort(versions.begin(), versions.end(), std::greater<QString>());
+    versions.erase(std::unique(versions.begin(), versions.end()), versions.end());
+    
+    return versions;
+}
+

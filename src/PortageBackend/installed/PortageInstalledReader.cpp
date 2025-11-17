@@ -6,6 +6,8 @@
 #include "PortageInstalledReader.h"
 #include "../backend/PortageBackend.h"
 #include "../resources/PortageUseFlags.h"
+#include "../utils/AtomParser.h"
+#include "../utils/PortagePaths.h"
 
 #include <QDir>
 #include <QDebug>
@@ -15,7 +17,7 @@
 PortageInstalledReader::PortageInstalledReader(PortageBackend *backend, QObject *parent)
     : QObject(parent)
     , m_backend(backend)
-    , m_pkgDbPath(QStringLiteral("/var/db/pkg"))
+    , m_pkgDbPath(QLatin1String(PortagePaths::PKG_DB))
 {
 }
 
@@ -99,6 +101,64 @@ void PortageInstalledReader::scanPkgDb(const QString &path)
             m_installedInfo.insert(atom.toLower(), info);
         }
     }
+}
+
+bool PortageInstalledReader::isPackageInstalled(const QString &atom) const
+{
+    return m_installedVersions.contains(atom.toLower());
+}
+
+QString PortageInstalledReader::findInstalledVersion(const QString &atom) const
+{
+    // Check if exact atom exists
+    QString normalized = atom.toLower();
+    if (m_installedVersions.contains(normalized)) {
+        return m_installedVersions.value(normalized);
+    }
+    
+    // If not found, try to find by scanning /var/db/pkg directory
+    return findPackageVersion(atom);
+}
+
+bool PortageInstalledReader::packageExists(const QString &atom)
+{
+    QString category = AtomParser::extractCategory(atom);
+    QString packageName = AtomParser::extractPackageName(atom);
+    
+    QDir varDbDir(QLatin1String(PortagePaths::PKG_DB) + QLatin1Char('/') + category);
+    if (!varDbDir.exists()) {
+        return false;
+    }
+    
+    QStringList entries = varDbDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &entry : entries) {
+        if (entry.startsWith(packageName + QLatin1Char('-'))) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+QString PortageInstalledReader::findPackageVersion(const QString &atom)
+{
+    QString category = AtomParser::extractCategory(atom);
+    QString packageName = AtomParser::extractPackageName(atom);
+    
+    QDir categoryDir(QLatin1String(PortagePaths::PKG_DB) + QLatin1Char('/') + category);
+    if (!categoryDir.exists()) {
+        return QString();
+    }
+    
+    QStringList entries = categoryDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &entry : entries) {
+        if (entry.startsWith(packageName + QLatin1Char('-'))) {
+            QString version = entry.mid(packageName.length() + 1);
+            return version;
+        }
+    }
+    
+    return QString();
 }
 
 QString PortageInstalledReader::readFileContent(const QString &filePath)

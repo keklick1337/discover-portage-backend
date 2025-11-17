@@ -5,6 +5,7 @@
 
 #include "UseFlagsDialog.h"
 #include "../resources/PortageUseFlags.h"
+#include "../installed/PortageInstalledReader.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -92,10 +93,8 @@ void UseFlagsDialog::loadUseFlags()
     
     PortageUseFlags useFlags;
     
-    // Check if package is installed
-    bool isInstalled = QFile::exists(QStringLiteral("/var/db/pkg/%1-%2").arg(m_packageAtom, m_version));
+    bool isInstalled = PortageInstalledReader::packageExists(m_packageAtom);
     
-    // Compute effective USE flags from all sources (make.conf, IUSE defaults, package.use, installed)
     PortageUseFlags::EffectiveUseFlags effective = useFlags.computeEffectiveUseFlags(m_packageAtom, m_version, isInstalled);
     
     qDebug() << "UseFlagsDialog: IUSE flags:" << effective.iuse;

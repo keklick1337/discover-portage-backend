@@ -48,4 +48,12 @@ private:
     bool writePortageFile(const QString &path, const QString &content);
     bool appendToPortageFile(const QString &path, const QString &content);
     QString getFileHeader();
+    
+    // Helper methods to reduce boilerplate
+    static ActionReply errorReply(const QString &message);
+    static ActionReply successReply(const QVariantMap &data = QVariantMap());
+    
+    // Package.use specific helpers
+    void removeAtomFromFile(const QString &filePath, const QString &atom);
+    bool removeAtomFromAllFiles(const QString &packageUseDir, const QString &atom);
 };

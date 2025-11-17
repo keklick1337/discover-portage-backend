@@ -31,6 +31,18 @@ public:
     QHash<QString, InstalledPackageInfo> installedPackagesInfo() const { return m_installedInfo; }
 
     void setKnownPackages(const QSet<QString> &knownAtoms) { m_knownAtoms = knownAtoms; }
+    
+    // Check if package is installed (exact atom or any version)
+    bool isPackageInstalled(const QString &atom) const;
+    
+    // Find installed package version for atom (returns empty if not found)
+    QString findInstalledVersion(const QString &atom) const;
+    
+    // Static helper: check if package directory exists in /var/db/pkg
+    static bool packageExists(const QString &atom);
+    
+    // Static helper: find any installed version for atom
+    static QString findPackageVersion(const QString &atom);
 
 Q_SIGNALS:
     void packagesLoaded(int count);

@@ -111,6 +111,12 @@ public:
     void loadMetadata();
     void loadUseFlagInfo();
 
+private:
+    void parseMetadataXml(const QString &pkgDirPath);
+    void parseEbuildDescription(const QString &pkgDirPath);
+    QString formatLongDescription();
+    bool hasMaintainerInfo() const;
+
 Q_SIGNALS:
     void useFlagsChanged();
     void metadataChanged();

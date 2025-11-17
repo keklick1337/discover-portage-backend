@@ -67,6 +67,10 @@ public:
     static QStringList parseUSE(const QString &useLine);
     
     static QMap<QString, QString> parseMetadataXml(const QString &metadataPath);
+    
+    // Helper methods for atom parsing
+    static QString extractCategory(const QString &atom);
+    static QString extractPackageName(const QString &atom);
 
 private:
     QString readVarDbFile(const QString &atom, const QString &version, const QString &filename);

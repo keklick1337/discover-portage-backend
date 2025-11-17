@@ -8,6 +8,7 @@
 #include "../backend/PortageBackend.h"
 #include "../emerge/EmergeRunner.h"
 #include "../emerge/UnmaskManager.h"
+#include "../installed/PortageInstalledReader.h"
 #include <KLocalizedString>
 #include <QTimer>
 #include <QPointer>
@@ -121,7 +122,6 @@ void PortageTransaction::onEmergeFinished(bool success, int exitCode)
     
     if (success) {
         if (role() == InstallRole) {
-            // Check if package was really installed before marking as Installed
             QPointer<PortageResource> res = m_resource;
             QTimer::singleShot(500, [res]() {
                 if (!res) {
@@ -129,45 +129,38 @@ void PortageTransaction::onEmergeFinished(bool success, int exitCode)
                     return;
                 }
                 
-                // Check if package exists in /var/db/pkg
                 QString atom = res->atom();
-                QString varDbPath = QStringLiteral("/var/db/pkg/") + atom;
-                QDir varDbDir(varDbPath);
-                
-                if (varDbDir.exists()) {
+                if (PortageInstalledReader::packageExists(atom)) {
                     qDebug() << "Portage: Package" << atom << "was installed successfully";
                     res->setState(AbstractResource::Installed);
                     res->loadUseFlagInfo();
                     qDebug() << "Portage: Installation completed for" << res->packageName();
                 } else {
-                    // Package directory doesn't exist - check if there's a versioned directory
-                    QString categoryPath = QStringLiteral("/var/db/pkg/") + atom.section(QLatin1Char('/'), 0, 0);
-                    QDir categoryDir(categoryPath);
-                    QString packageName = atom.section(QLatin1Char('/'), 1);
-                    
-                    QStringList installed = categoryDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-                    bool found = false;
-                    for (const QString &dir : installed) {
-                        if (dir.startsWith(packageName + QLatin1Char('-'))) {
-                            qDebug() << "Portage: Found installed package" << dir << "for" << atom;
-                            res->setState(AbstractResource::Installed);
-                            res->loadUseFlagInfo();
-                            found = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!found) {
-                        qWarning() << "Portage: Package" << atom << "was not found in /var/db/pkg after installation";
-                        res->setState(AbstractResource::None);
-                    }
+                    qWarning() << "Portage: Package" << atom << "was not found after installation";
+                    res->setState(AbstractResource::None);
                 }
             });
             
         } else if (role() == RemoveRole) {
-            m_resource->setState(AbstractResource::None);
-            m_resource->setInstalledVersion(QString());
-            qDebug() << "Portage: Removal completed for" << m_resource->packageName();
+            QPointer<PortageResource> res = m_resource;
+            QTimer::singleShot(500, [res]() {
+                if (!res) {
+                    qWarning() << "Portage: Resource was deleted before delayed removal check";
+                    return;
+                }
+                
+                QString atom = res->atom();
+                if (!PortageInstalledReader::packageExists(atom)) {
+                    qDebug() << "Portage: Package" << atom << "was removed successfully";
+                    res->setState(AbstractResource::None);
+                    res->setInstalledVersion(QString());
+                    res->loadUseFlagInfo();
+                    qDebug() << "Portage: Removal completed for" << res->packageName();
+                } else {
+                    qWarning() << "Portage: Package" << atom << "still exists after removal attempt";
+                    res->setState(AbstractResource::Installed);
+                }
+            });
         }
         setStatus(DoneStatus);
     } else {
@@ -222,8 +215,10 @@ void PortageTransaction::handleUnmaskRequest(const EmergeRunner::EmergeResult &r
     // TODO: Show dialog asking user permission to unmask
     // TODO: Add version selection dialog in Discover UI (default: latest ~amd64)
     // For now, auto-unmask all masked packages
-    bool allSuccess = true;
     QString atomToInstall;  // Full versioned atom for installation
+    
+    int totalToUnmask = 0;
+    QStringList atomsToUnmask;
     
     for (const QString &maskedEntry : result.maskedPackages) {
         // Parse "=category/package-version ~amd64" into atom and keyword
@@ -238,24 +233,53 @@ void PortageTransaction::handleUnmaskRequest(const EmergeRunner::EmergeResult &r
             atomToInstall = atom;
         }
         
-        qDebug() << "Auto-unmasking package:" << atom << "with keyword:" << keyword;
-        if (!m_unmaskManager->unmaskPackage(atom, keyword)) {
-            qWarning() << "Failed to unmask package:" << atom;
-            allSuccess = false;
-        }
+        atomsToUnmask << atom;
+        totalToUnmask++;
     }
     
-    if (allSuccess && !atomToInstall.isEmpty()) {
-        qDebug() << "Package unmasked successfully, proceeding with installation of" << atomToInstall;
-        // Use the exact versioned atom from emerge --pretend (e.g., =www-client/google-chrome-beta-143.0.7499.4)
-        if (role() == InstallRole) {
-            m_emergeRunner->installPackage(atomToInstall);
-        } else if (role() == RemoveRole) {
-            m_emergeRunner->uninstallPackage(atomToInstall);
+    if (totalToUnmask == 0) {
+        // No unmasking needed
+        if (!atomToInstall.isEmpty()) {
+            qDebug() << "No unmasking needed, proceeding with installation of" << atomToInstall;
+            if (role() == InstallRole) {
+                m_emergeRunner->installPackage(atomToInstall);
+            } else if (role() == RemoveRole) {
+                m_emergeRunner->uninstallPackage(atomToInstall);
+            }
+        } else {
+            qWarning() << "No packages to unmask and no atom to install";
+            setStatus(DoneWithErrorStatus);
         }
-    } else {
-        qWarning() << "Failed to unmask one or more packages";
-        setStatus(DoneWithErrorStatus);
+        return;
+    }
+    
+    // Start unmasking async - use shared pointer for counter to safely share between callbacks
+    auto unmaskedCount = std::make_shared<int>(0);
+    for (int i = 0; i < atomsToUnmask.size(); i++) {
+        const QString &maskedEntry = result.maskedPackages[i];
+        QStringList parts = maskedEntry.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        QString atom = parts.first();
+        QString keyword = parts.size() > 1 ? parts.at(1) : QStringLiteral("~amd64");
+        
+        qDebug() << "Auto-unmasking package:" << atom << "with keyword:" << keyword;
+        
+        m_unmaskManager->unmaskPackage(atom, keyword, [this, totalToUnmask, unmaskedCount, atom, atomToInstall](bool success) {
+            if (!success) {
+                qWarning() << "Failed to unmask package:" << atom;
+                setStatus(DoneWithErrorStatus);
+                return;
+            }
+            
+            (*unmaskedCount)++;
+            if (*unmaskedCount >= totalToUnmask) {
+                qDebug() << "All packages unmasked successfully, proceeding with installation of" << atomToInstall;
+                if (role() == InstallRole) {
+                    m_emergeRunner->installPackage(atomToInstall);
+                } else if (role() == RemoveRole) {
+                    m_emergeRunner->uninstallPackage(atomToInstall);
+                }
+            }
+        });
     }
 }
 

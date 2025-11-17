@@ -4,6 +4,9 @@
  */
 
 #include "PortageAuthHelper.h"
+#include "../utils/AtomParser.h"
+#include "../utils/StringUtils.h"
+#include "../utils/PortagePaths.h"
 #include <KAuth/HelperSupport>
 #include <QFile>
 #include <QTextStream>
@@ -48,9 +51,7 @@ ActionReply PortageAuthHelper::execute(const QVariantMap &args)
         return worldRemove(args);
     }
     
-    ActionReply reply = ActionReply::HelperErrorReply();
-    reply.setErrorDescription(QStringLiteral("Unknown action: ") + action);
-    return reply;
+    return errorReply(QStringLiteral("Unknown action: ") + action);
 }
 
 //=============================================================================
@@ -65,9 +66,7 @@ ActionReply PortageAuthHelper::emergeExecute(const QVariantMap &args)
     const int timeout = args.value(QStringLiteral("timeout"), -1).toInt(); // -1 = no timeout
     
     if (emergeArgs.isEmpty()) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("No emerge arguments provided"));
-        return reply;
+        return errorReply(QStringLiteral("No emerge arguments provided"));
     }
     
     syslog(LOG_INFO, "emerge %s", qPrintable(emergeArgs.join(QLatin1Char(' '))));
@@ -93,29 +92,21 @@ ActionReply PortageAuthHelper::fileWrite(const QVariantMap &args)
     const bool append = args.value(QStringLiteral("append"), false).toBool();
     
     if (path.isEmpty()) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("No file path provided"));
-        return reply;
+        return errorReply(QStringLiteral("No file path provided"));
     }
     
     if (!validatePortagePath(path)) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Invalid path: must be under /etc/portage or /var/lib/portage"));
-        return reply;
+        return errorReply(QStringLiteral("Invalid path: must be under /etc/portage or /var/lib/portage"));
     }
     
     bool success = append ? appendToPortageFile(path, content) 
                           : writePortageFile(path, content);
     
     if (success) {
-        ActionReply reply = ActionReply::SuccessReply();
-        reply.addData(QStringLiteral("path"), path);
-        reply.addData(QStringLiteral("bytes"), content.toUtf8().size());
-        return reply;
+        return successReply({{QStringLiteral("path"), path},
+                            {QStringLiteral("bytes"), content.toUtf8().size()}});
     } else {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Failed to write file: ") + path);
-        return reply;
+        return errorReply(QStringLiteral("Failed to write file: ") + path);
     }
 }
 
@@ -124,17 +115,13 @@ ActionReply PortageAuthHelper::fileRead(const QVariantMap &args)
     const QString path = args.value(QStringLiteral("path")).toString();
     
     if (!validatePortagePath(path)) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Invalid path"));
-        return reply;
+        return errorReply(QStringLiteral("Invalid path"));
     }
     
     QString content = readPortageFile(path);
     
-    ActionReply reply = ActionReply::SuccessReply();
-    reply.addData(QStringLiteral("content"), content);
-    reply.addData(QStringLiteral("path"), path);
-    return reply;
+    return successReply({{QStringLiteral("content"), content},
+                        {QStringLiteral("path"), path}});
 }
 
 //=============================================================================
@@ -149,13 +136,11 @@ ActionReply PortageAuthHelper::packageUnmask(const QVariantMap &args)
     const QStringList keywords = args.value(QStringLiteral("keywords")).toStringList();
     
     if (atom.isEmpty()) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("No package atom provided"));
-        return reply;
+        return errorReply(QStringLiteral("No package atom provided"));
     }
     
     // Default to package.accept_keywords
-    QString filePath = QStringLiteral("/etc/portage/package.accept_keywords/discover");
+    QString filePath = QString::fromLatin1(PortagePaths::PACKAGE_ACCEPT_KEYWORDS) + QStringLiteral("/discover");
     
     QString entry = atom;
     if (!keywords.isEmpty()) {
@@ -169,14 +154,10 @@ ActionReply PortageAuthHelper::packageUnmask(const QVariantMap &args)
     content += entry + QStringLiteral("\n");
     
     if (appendToPortageFile(filePath, entry + QStringLiteral("\n"))) {
-        ActionReply reply = ActionReply::SuccessReply();
-        reply.addData(QStringLiteral("atom"), atom);
-        reply.addData(QStringLiteral("file"), filePath);
-        return reply;
+        return successReply({{QStringLiteral("atom"), atom},
+                            {QStringLiteral("file"), filePath}});
     } else {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Failed to unmask package"));
-        return reply;
+        return errorReply(QStringLiteral("Failed to unmask package"));
     }
 }
 
@@ -186,12 +167,10 @@ ActionReply PortageAuthHelper::packageMask(const QVariantMap &args)
     const QString reason = args.value(QStringLiteral("reason")).toString();
     
     if (atom.isEmpty()) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("No package atom provided"));
-        return reply;
+        return errorReply(QStringLiteral("No package atom provided"));
     }
     
-    QString filePath = QStringLiteral("/etc/portage/package.mask/discover");
+    QString filePath = QString::fromLatin1(PortagePaths::PACKAGE_MASK) + QStringLiteral("/discover");
     QString entry;
     
     if (!reason.isEmpty()) {
@@ -200,13 +179,9 @@ ActionReply PortageAuthHelper::packageMask(const QVariantMap &args)
     entry += atom + QStringLiteral("\n");
     
     if (appendToPortageFile(filePath, entry)) {
-        ActionReply reply = ActionReply::SuccessReply();
-        reply.addData(QStringLiteral("atom"), atom);
-        return reply;
+        return successReply({{QStringLiteral("atom"), atom}});
     } else {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Failed to mask package"));
-        return reply;
+        return errorReply(QStringLiteral("Failed to mask package"));
     }
 }
 
@@ -218,80 +193,24 @@ ActionReply PortageAuthHelper::packageUse(const QVariantMap &args)
     const QStringList useFlags = args.value(QStringLiteral("useFlags")).toStringList();
     
     if (atom.isEmpty() || useFlags.isEmpty()) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Missing atom or USE flags"));
-        return reply;
+        return errorReply(QStringLiteral("Missing atom or USE flags"));
     }
     
-    // Extract package name from atom (e.g., "net-misc/remmina" -> "remmina")
-    QString packageName = atom;
-    int slashIndex = atom.lastIndexOf(QLatin1Char('/'));
-    if (slashIndex != -1) {
-        packageName = atom.mid(slashIndex + 1);
-    }
+    // Extract package name from atom using AtomParser
+    QString packageName = AtomParser::extractPackageNameForFile(atom);
     
     // First, remove existing USE flag configurations from all files
-    const QString packageUseDir = QStringLiteral("/etc/portage/package.use");
-    QDir dir(packageUseDir);
-    
-    if (dir.exists()) {
-        const QFileInfoList files = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
-        
-        for (const QFileInfo &fileInfo : files) {
-            QString filePath = fileInfo.absoluteFilePath();
-            
-            // Read file and remove lines with this atom
-            QFile file(filePath);
-            if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                continue;
-            }
-            
-            QStringList lines;
-            QTextStream in(&file);
-            while (!in.atEnd()) {
-                QString line = in.readLine();
-                QString trimmedLine = line.trimmed();
-                
-                // Keep the line if it doesn't contain the atom or is a comment
-                if (trimmedLine.isEmpty() || trimmedLine.startsWith(QLatin1Char('#'))) {
-                    lines << line;
-                } else {
-                    QStringList parts = trimmedLine.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
-                    if (parts.isEmpty() || parts.first() != atom) {
-                        lines << line;
-                    }
-                    // else: skip this line (it's for the atom we want to remove)
-                }
-            }
-            file.close();
-            
-            // Rewrite the file without the old entries
-            if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-                syslog(LOG_WARNING, "Failed to rewrite file: %s", qPrintable(filePath));
-                continue;
-            }
-            
-            QTextStream out(&file);
-            for (const QString &line : lines) {
-                out << line << "\n";
-            }
-            file.close();
-        }
-    }
+    removeAtomFromAllFiles(QString::fromLatin1(PortagePaths::PACKAGE_USE), atom);
     
     // Now add the new configuration to discover_<packagename> file
-    QString targetFile = packageUseDir + QStringLiteral("/discover_") + packageName;
+    QString targetFile = QString::fromLatin1(PortagePaths::PACKAGE_USE) + QStringLiteral("/discover_") + packageName;
     QString entry = atom + QStringLiteral(" ") + useFlags.join(QLatin1Char(' ')) + QStringLiteral("\n");
     
     if (appendToPortageFile(targetFile, entry)) {
-        ActionReply reply = ActionReply::SuccessReply();
-        reply.addData(QStringLiteral("atom"), atom);
-        reply.addData(QStringLiteral("useFlags"), useFlags);
-        return reply;
+        return successReply({{QStringLiteral("atom"), atom}, 
+                            {QStringLiteral("useFlags"), useFlags}});
     } else {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Failed to set USE flags"));
-        return reply;
+        return errorReply(QStringLiteral("Failed to set USE flags"));
     }
 }
 
@@ -301,22 +220,16 @@ ActionReply PortageAuthHelper::packageLicense(const QVariantMap &args)
     const QStringList licenses = args.value(QStringLiteral("licenses")).toStringList();
     
     if (atom.isEmpty() || licenses.isEmpty()) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Missing atom or licenses"));
-        return reply;
+        return errorReply(QStringLiteral("Missing atom or licenses"));
     }
     
-    QString filePath = QStringLiteral("/etc/portage/package.license/discover");
+    QString filePath = QString::fromLatin1(PortagePaths::PACKAGE_LICENSE) + QStringLiteral("/discover");
     QString entry = atom + QStringLiteral(" ") + licenses.join(QLatin1Char(' ')) + QStringLiteral("\n");
     
     if (appendToPortageFile(filePath, entry)) {
-        ActionReply reply = ActionReply::SuccessReply();
-        reply.addData(QStringLiteral("atom"), atom);
-        return reply;
+        return successReply({{QStringLiteral("atom"), atom}});
     } else {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Failed to accept license"));
-        return reply;
+        return errorReply(QStringLiteral("Failed to accept license"));
     }
 }
 
@@ -329,31 +242,23 @@ ActionReply PortageAuthHelper::worldAdd(const QVariantMap &args)
     const QString atom = args.value(QStringLiteral("atom")).toString();
     
     if (atom.isEmpty()) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("No package atom provided"));
-        return reply;
+        return errorReply(QStringLiteral("No package atom provided"));
     }
     
-    QString worldPath = QStringLiteral("/var/lib/portage/world");
+    QString worldPath = QLatin1String(PortagePaths::WORLD_FILE);
     QString content = readPortageFile(worldPath);
     
     // Check if already in world
     QStringList entries = content.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
     if (entries.contains(atom)) {
-        ActionReply reply = ActionReply::SuccessReply();
-        reply.addData(QStringLiteral("status"), QStringLiteral("already_exists"));
-        return reply;
+        return successReply({{QStringLiteral("status"), QStringLiteral("already_exists")}});
     }
     
     // Add to world
     if (appendToPortageFile(worldPath, atom + QStringLiteral("\n"))) {
-        ActionReply reply = ActionReply::SuccessReply();
-        reply.addData(QStringLiteral("atom"), atom);
-        return reply;
+        return successReply({{QStringLiteral("atom"), atom}});
     } else {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Failed to add to world"));
-        return reply;
+        return errorReply(QStringLiteral("Failed to add to world"));
     }
 }
 
@@ -362,12 +267,10 @@ ActionReply PortageAuthHelper::worldRemove(const QVariantMap &args)
     const QString atom = args.value(QStringLiteral("atom")).toString();
     
     if (atom.isEmpty()) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("No package atom provided"));
-        return reply;
+        return errorReply(QStringLiteral("No package atom provided"));
     }
     
-    QString worldPath = QStringLiteral("/var/lib/portage/world");
+    QString worldPath = QLatin1String(PortagePaths::WORLD_FILE);
     QString content = readPortageFile(worldPath);
     
     QStringList entries = content.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
@@ -376,13 +279,9 @@ ActionReply PortageAuthHelper::worldRemove(const QVariantMap &args)
     QString newContent = entries.join(QLatin1Char('\n')) + QStringLiteral("\n");
     
     if (writePortageFile(worldPath, newContent)) {
-        ActionReply reply = ActionReply::SuccessReply();
-        reply.addData(QStringLiteral("atom"), atom);
-        return reply;
+        return successReply({{QStringLiteral("atom"), atom}});
     } else {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Failed to remove from world"));
-        return reply;
+        return errorReply(QStringLiteral("Failed to remove from world"));
     }
 }
 
@@ -405,9 +304,7 @@ ActionReply PortageAuthHelper::runProcess(const QString &program,
     process.start(program, args);
     
     if (!process.waitForStarted()) {
-        ActionReply reply = ActionReply::HelperErrorReply();
-        reply.setErrorDescription(QStringLiteral("Failed to start: ") + program);
-        return reply;
+        return errorReply(QStringLiteral("Failed to start: ") + program);
     }
     
     QByteArray outputBuffer;
@@ -456,11 +353,13 @@ ActionReply PortageAuthHelper::runProcess(const QString &program,
     syslog(LOG_INFO, "%s finished with exit code %d", qPrintable(program), exitCode);
     
     // Always return success reply, but include exit code in data
-    ActionReply reply = ActionReply::SuccessReply();
-    reply.addData(QStringLiteral("output"), QString::fromUtf8(outputBuffer));
-    reply.addData(QStringLiteral("error"), QString::fromUtf8(errorBuffer));
-    reply.addData(QStringLiteral("exitCode"), exitCode);
+    QVariantMap resultData = {
+        {QStringLiteral("output"), QString::fromUtf8(outputBuffer)},
+        {QStringLiteral("error"), QString::fromUtf8(errorBuffer)},
+        {QStringLiteral("exitCode"), exitCode}
+    };
     
+    ActionReply reply = successReply(resultData);
     if (exitCode != 0) {
         reply.setErrorDescription(QStringLiteral("Process exited with code: ") + QString::number(exitCode));
     }
@@ -471,8 +370,8 @@ ActionReply PortageAuthHelper::runProcess(const QString &program,
 bool PortageAuthHelper::validatePortagePath(const QString &path)
 {
     // Only allow access to /etc/portage and /var/lib/portage
-    return path.startsWith(QStringLiteral("/etc/portage/")) ||
-           path.startsWith(QStringLiteral("/var/lib/portage/"));
+    return path.startsWith(QLatin1String(PortagePaths::ETC_PORTAGE) + QLatin1Char('/')) ||
+           path.startsWith(QLatin1String(PortagePaths::VAR_LIB_PORTAGE) + QLatin1Char('/'));
 }
 
 QString PortageAuthHelper::readPortageFile(const QString &path)
@@ -552,6 +451,76 @@ QString PortageAuthHelper::getFileHeader()
     return QStringLiteral("# Managed by Plasma Discover\n"
                          "# Generated on %1")
            .arg(QDateTime::currentDateTime().toString(Qt::ISODate));
+}
+
+ActionReply PortageAuthHelper::errorReply(const QString &message)
+{
+    ActionReply reply = ActionReply::HelperErrorReply();
+    reply.setErrorDescription(message);
+    return reply;
+}
+
+ActionReply PortageAuthHelper::successReply(const QVariantMap &data)
+{
+    ActionReply reply = ActionReply::SuccessReply();
+    for (auto it = data.begin(); it != data.end(); ++it) {
+        reply.addData(it.key(), it.value());
+    }
+    return reply;
+}
+
+void PortageAuthHelper::removeAtomFromFile(const QString &filePath, const QString &atom)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return;
+    }
+    
+    QStringList lines;
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        QString trimmedLine = line.trimmed();
+        
+        // Keep the line if it doesn't contain the atom or is a comment
+        if (StringUtils::isCommentOrEmptyTrimmed(trimmedLine)) {
+            lines << line;
+        } else {
+            QStringList parts = trimmedLine.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+            if (parts.isEmpty() || parts.first() != atom) {
+                lines << line;
+            }
+            // else: skip this line (it's for the atom we want to remove)
+        }
+    }
+    file.close();
+    
+    // Rewrite the file without the old entries
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        syslog(LOG_WARNING, "Failed to rewrite file: %s", qPrintable(filePath));
+        return;
+    }
+    
+    QTextStream out(&file);
+    for (const QString &line : lines) {
+        out << line << "\n";
+    }
+    file.close();
+}
+
+bool PortageAuthHelper::removeAtomFromAllFiles(const QString &packageUseDir, const QString &atom)
+{
+    QDir dir(packageUseDir);
+    if (!dir.exists()) {
+        return true; // Nothing to remove
+    }
+    
+    const QFileInfoList files = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
+    for (const QFileInfo &fileInfo : files) {
+        removeAtomFromFile(fileInfo.absoluteFilePath(), atom);
+    }
+    
+    return true;
 }
 
 KAUTH_HELPER_MAIN("org.kde.discover.portagebackend", PortageAuthHelper)

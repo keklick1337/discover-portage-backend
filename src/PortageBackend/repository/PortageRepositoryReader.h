@@ -24,6 +24,13 @@ public:
     void loadRepository();
 
     QHash<QString, PortageResource *> packages() const { return m_packages; }
+    
+    // Static helper methods for repository operations
+    static QString findPackageRepository(const QString &atom);
+    static QString findPackagePath(const QString &atom, const QString &repository = QString());
+    static QStringList getAvailableVersions(const QString &atom, const QString &repository = QString());
+    static bool packageExistsInRepo(const QString &atom, const QString &repository = QString());
+    static QStringList getAllRepositories();
 
 private:
     QStringList findAvailableVersions(const QString &pkgPath, const QString &pkgName);

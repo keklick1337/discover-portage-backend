@@ -4,8 +4,11 @@
  */
 
 #include "MakeConfReader.h"
+#include "../utils/StringUtils.h"
 
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
 #include <QTextStream>
 #include <QDebug>
 #include <QRegularExpression>
@@ -69,12 +72,13 @@ QString MakeConfReader::parseVariable(const QString &filePath, const QString &va
     
     while (!in.atEnd()) {
         QString line = in.readLine();
-        QString trimmedLine = line.trimmed();
         
         // Skip comments and empty lines
-        if (trimmedLine.isEmpty() || trimmedLine.startsWith(QLatin1Char('#'))) {
+        if (StringUtils::isCommentOrEmpty(line)) {
             continue;
         }
+        
+        QString trimmedLine = line.trimmed();
         
         // Check for VARIABLE= assignment
         auto match = varRegex.match(trimmedLine);
@@ -185,4 +189,54 @@ QString MakeConfReader::parseVariable(const QString &filePath, const QString &va
     qDebug() << "MakeConfReader: Read" << variableName << "=" << result;
     
     return result;
+}
+
+QStringList MakeConfReader::readGlobalPackageUse() const
+{
+    QStringList globalFlags;
+    
+    QFileInfo packageUseInfo(QString::fromLatin1(PACKAGE_USE_DIR));
+    
+    if (packageUseInfo.isFile()) {
+        parsePackageUseFile(QString::fromLatin1(PACKAGE_USE_DIR), globalFlags);
+    } else if (packageUseInfo.isDir()) {
+        QDir dir(QString::fromLatin1(PACKAGE_USE_DIR));
+        QStringList files = dir.entryList(QDir::Files, QDir::Name);
+        for (const QString &file : files) {
+            parsePackageUseFile(dir.absoluteFilePath(file), globalFlags);
+        }
+    }
+    
+    return globalFlags;
+}
+
+void MakeConfReader::parsePackageUseFile(const QString &filePath, QStringList &globalFlags) const
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return;
+    }
+    
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+        
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) {
+            continue;
+        }
+        
+        // Check for global entry: */* flag1 flag2 ...
+        if (line.startsWith(QStringLiteral("*/*"))) {
+            QString flagsPart = line.mid(3).trimmed();
+            QStringList flags = flagsPart.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+            
+            for (const QString &flag : flags) {
+                if (!globalFlags.contains(flag)) {
+                    globalFlags << flag;
+                }
+            }
+        }
+    }
+    
+    file.close();
 }

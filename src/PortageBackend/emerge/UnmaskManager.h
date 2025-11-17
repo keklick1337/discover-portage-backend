@@ -15,7 +15,7 @@ class UnmaskManager : public QObject
 public:
     explicit UnmaskManager(QObject *parent = nullptr);
 
-    bool unmaskPackage(const QString &atom, const QString &keyword = QStringLiteral("~amd64"));
+    void unmaskPackage(const QString &atom, const QString &keyword, std::function<void(bool)> callback);
 
     bool maskPackage(const QString &atom);
 
@@ -27,6 +27,7 @@ private:
     QString m_unmaskFilePath;
     
     bool readUnmaskFile(QStringList &lines) const;
-    bool writeUnmaskFile(const QStringList &lines) const;
+    bool writeUnmaskFile(const QStringList &lines) const;  // Sync version for maskPackage
+    void writeUnmaskFileAsync(const QStringList &lines, std::function<void(bool)> callback);
     QString getFileHeader() const;
 };

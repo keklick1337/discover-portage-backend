@@ -4,21 +4,22 @@
  */
 
 #include "UnmaskManager.h"
+#include "../utils/StringUtils.h"
+#include "../utils/PortagePaths.h"
 #include <QFile>
 #include <QTextStream>
 #include <QDir>
 #include <QDebug>
-#include <QEventLoop>
 #include <KAuth/Action>
 #include <KAuth/ExecuteJob>
 
 UnmaskManager::UnmaskManager(QObject *parent)
     : QObject(parent)
-    , m_unmaskFilePath(QStringLiteral("/etc/portage/package.accept_keywords/discover_unmask"))
+    , m_unmaskFilePath(QLatin1String(PortagePaths::PACKAGE_ACCEPT_KEYWORDS) + QStringLiteral("/discover_unmask"))
 {
 }
 
-bool UnmaskManager::unmaskPackage(const QString &atom, const QString &keyword)
+void UnmaskManager::unmaskPackage(const QString &atom, const QString &keyword, std::function<void(bool)> callback)
 {
     QStringList lines;
     readUnmaskFile(lines);
@@ -28,7 +29,8 @@ bool UnmaskManager::unmaskPackage(const QString &atom, const QString &keyword)
     for (const QString &line : lines) {
         if (line.trimmed().startsWith(atom + QLatin1Char(' '))) {
             qDebug() << "UnmaskManager: Package already unmasked:" << atom;
-            return true;
+            callback(true);
+            return;
         }
     }
     
@@ -36,7 +38,7 @@ bool UnmaskManager::unmaskPackage(const QString &atom, const QString &keyword)
     lines.append(entry);
     
     qDebug() << "UnmaskManager: Unmasking package:" << entry;
-    return writeUnmaskFile(lines);
+    writeUnmaskFileAsync(lines, callback);
 }
 
 bool UnmaskManager::maskPackage(const QString &atom)
@@ -133,7 +135,7 @@ bool UnmaskManager::readUnmaskFile(QStringList &lines) const
     return true;
 }
 
-bool UnmaskManager::writeUnmaskFile(const QStringList &lines) const
+void UnmaskManager::writeUnmaskFileAsync(const QStringList &lines, std::function<void(bool)> callback)
 {
     QString content;
     QTextStream stream(&content);
@@ -141,7 +143,7 @@ bool UnmaskManager::writeUnmaskFile(const QStringList &lines) const
     stream << getFileHeader() << "\n\n";
     
     for (const QString &line : lines) {
-        if (line.trimmed().isEmpty() || line.trimmed().startsWith(QLatin1Char('#'))) {
+        if (StringUtils::isCommentOrEmpty(line)) {
             continue;
         }
         stream << line << "\n";
@@ -162,23 +164,51 @@ bool UnmaskManager::writeUnmaskFile(const QStringList &lines) const
     qDebug() << "UnmaskManager: Executing KAuth action to write unmask file";
     KAuth::ExecuteJob *job = writeAction.execute();
 
-    bool success = false;
-    QEventLoop loop;
-    QObject::connect(job, &KAuth::ExecuteJob::result, [&success, &loop](KJob *finishedJob) {
+    QObject::connect(job, &KAuth::ExecuteJob::result, this, [callback](KJob *finishedJob) {
         KAuth::ExecuteJob *authJob = static_cast<KAuth::ExecuteJob *>(finishedJob);
-        if (authJob->error() == 0) {
+        bool success = (authJob->error() == 0);
+        if (success) {
             qDebug() << "UnmaskManager: Successfully wrote unmask file via KAuth";
-            success = true;
         } else {
             qWarning() << "UnmaskManager: KAuth action failed:" << authJob->errorString();
         }
-        loop.quit();
+        callback(success);
     });
     
     job->start();
-    loop.exec(); // Wait for completion
+}
+
+bool UnmaskManager::writeUnmaskFile(const QStringList &lines) const
+{
+    QString content;
+    QTextStream stream(&content);
     
-    return success;
+    stream << getFileHeader() << "\n\n";
+    
+    for (const QString &line : lines) {
+        if (StringUtils::isCommentOrEmpty(line)) {
+            continue;
+        }
+        stream << line << "\n";
+    }
+
+    // Use KAuth synchronously for backward compatibility (maskPackage)
+    KAuth::Action writeAction(QStringLiteral("org.kde.discover.portagebackend.execute"));
+    writeAction.setHelperId(QStringLiteral("org.kde.discover.portagebackend"));
+    writeAction.setTimeout(-1);
+    
+    QVariantMap args;
+    args[QStringLiteral("action")] = QStringLiteral("file.write");
+    args[QStringLiteral("path")] = m_unmaskFilePath;
+    args[QStringLiteral("content")] = content;
+    args[QStringLiteral("append")] = false;
+    
+    writeAction.setArguments(args);
+    
+    KAuth::ExecuteJob *job = writeAction.execute();
+    job->exec();  // Synchronous
+    
+    return (job->error() == 0);
 }
 
 QString UnmaskManager::getFileHeader() const

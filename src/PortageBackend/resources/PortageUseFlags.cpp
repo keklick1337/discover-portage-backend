@@ -5,6 +5,10 @@
 
 #include "PortageUseFlags.h"
 #include "config/MakeConfReader.h"
+#include "../repository/PortageRepositoryReader.h"
+#include "../installed/PortageInstalledReader.h"
+#include "../utils/StringUtils.h"
+#include "../utils/PortagePaths.h"
 #include <QFile>
 #include <QDir>
 #include <QTextStream>
@@ -29,26 +33,9 @@ UseFlagInfo PortageUseFlags::readInstalledPackageInfo(const QString &atom, const
     
     // If version is empty, auto-detect from /var/db/pkg
     if (actualVersion.isEmpty()) {
-        // Extract category and package name
-        QString category = atom.section(QLatin1Char('/'), 0, 0);
-        QString pkgName = atom.section(QLatin1Char('/'), 1);
-        
-        // Look in /var/db/pkg/category/ for directories matching pkgname-*
-        QDir categoryDir(QStringLiteral("/var/db/pkg/%1").arg(category));
-        if (categoryDir.exists()) {
-            QFileInfoList entries = categoryDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
-            for (const QFileInfo &entry : entries) {
-                QString dirName = entry.fileName();
-                // Check if directory starts with "pkgname-"
-                if (dirName.startsWith(pkgName + QLatin1Char('-'))) {
-                    // Extract version from "pkgname-version"
-                    actualVersion = dirName.mid(pkgName.length() + 1);
-                    qDebug() << "PortageUseFlags: Auto-detected version" << actualVersion << "for" << atom;
-                    break;
-                }
-            }
-        } else {
-            qDebug() << "PortageUseFlags: Category directory does not exist:" << categoryDir.path();
+        actualVersion = PortageInstalledReader::findPackageVersion(atom);
+        if (!actualVersion.isEmpty()) {
+            qDebug() << "PortageUseFlags: Auto-detected version" << actualVersion << "for" << atom;
         }
     }
     
@@ -73,8 +60,11 @@ UseFlagInfo PortageUseFlags::readInstalledPackageInfo(const QString &atom, const
     
     // Read USE flag descriptions from repository metadata.xml
     if (!info.repository.isEmpty()) {
-        QString metadataPath = QStringLiteral("/var/db/repos/%1/%2/metadata.xml").arg(info.repository, atom);
-        info.descriptions = parseMetadataXml(metadataPath);
+        QString pkgPath = PortageRepositoryReader::findPackagePath(atom, info.repository);
+        if (!pkgPath.isEmpty()) {
+            QString metadataPath = pkgPath + QStringLiteral("/metadata.xml");
+            info.descriptions = parseMetadataXml(metadataPath);
+        }
     }
 
     m_cache.insert(cacheKey, info);
@@ -90,7 +80,8 @@ UseFlagInfo PortageUseFlags::readInstalledPackageInfo(const QString &atom, const
 QString PortageUseFlags::readVarDbFile(const QString &atom, const QString &version, const QString &filename)
 {
     // First try exact version match
-    QString exactPath = QStringLiteral("/var/db/pkg/%1-%2/%3").arg(atom, version, filename);
+    QString exactPath = QLatin1String(PortagePaths::PKG_DB) + QLatin1Char('/') + 
+                        atom + QLatin1Char('-') + version + QLatin1Char('/') + filename;
     QFile exactFile(exactPath);
     
     if (exactFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -100,7 +91,7 @@ QString PortageUseFlags::readVarDbFile(const QString &atom, const QString &versi
     }
     
     // If exact match failed, search for version with revision (e.g., 1.2.3-r1)
-    QDir pkgDir(QStringLiteral("/var/db/pkg/%1").arg(atom));
+    QDir pkgDir(QLatin1String(PortagePaths::PKG_DB) + QLatin1Char('/') + atom);
     if (!pkgDir.exists()) {
         qDebug() << "PortageUseFlags: Package directory does not exist:" << pkgDir.path();
         return QString();
@@ -173,8 +164,8 @@ QStringList PortageUseFlags::readAvailableUseFlags(const QString &atom, const QS
 {
     // Try to read IUSE from repository metadata
     // Format: /var/db/repos/gentoo/category/package/*.ebuild
-    const QString category = atom.section(QLatin1Char('/'), 0, 0);
-    const QString package = atom.section(QLatin1Char('/'), 1, 1);
+    const QString category = extractCategory(atom);
+    const QString package = extractPackageName(atom);
     
     const QString packageDir = QStringLiteral("%1/%2/%3").arg(repoPath, category, package);
     QDir dir(packageDir);
@@ -332,10 +323,10 @@ bool PortageUseFlags::removeLinesFromFile(const QString &filePath, const QString
     while (!in.atEnd()) {
         QString line = in.readLine();
         // Keep the line if it doesn't contain the atom or is a comment
-        QString trimmedLine = line.trimmed();
-        if (trimmedLine.isEmpty() || trimmedLine.startsWith(QLatin1Char('#'))) {
+        if (StringUtils::isCommentOrEmpty(line)) {
             lines << line;
         } else {
+            QString trimmedLine = line.trimmed();
             QStringList parts = trimmedLine.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
             if (parts.isEmpty() || parts.first() != atom) {
                 lines << line;
@@ -361,7 +352,7 @@ bool PortageUseFlags::removeLinesFromFile(const QString &filePath, const QString
 
 QString PortageUseFlags::packageUseDir()
 {
-    return QStringLiteral("/etc/portage/package.use");
+    return QLatin1String(PortagePaths::PACKAGE_USE);
 }
 
 QString PortageUseFlags::useFlagFileName(const QString &packageName)
@@ -434,7 +425,8 @@ UseFlagInfo PortageUseFlags::readRepositoryPackageInfo(const QString &atom, cons
         // Fallback to reading ebuild file directly (won't catch dynamic flags like L10N)
         qDebug() << "PortageUseFlags: portageq failed, falling back to ebuild parsing";
         
-        QString ebuildPath = QStringLiteral("%1/%2/%3-%4.ebuild").arg(repoPath, atom, atom.section(QLatin1Char('/'), -1), version);
+        QString packageName = extractPackageName(atom);
+        QString ebuildPath = QStringLiteral("%1/%2/%3-%4.ebuild").arg(repoPath, atom, packageName, version);
         
         QFile ebuildFile(ebuildPath);
         if (ebuildFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -601,4 +593,14 @@ PortageUseFlags::EffectiveUseFlags PortageUseFlags::computeEffectiveUseFlags(con
              << "- IUSE:" << result.iuse.size();
     
     return result;
+}
+
+QString PortageUseFlags::extractCategory(const QString &atom)
+{
+    return atom.section(QLatin1Char('/'), 0, 0);
+}
+
+QString PortageUseFlags::extractPackageName(const QString &atom)
+{
+    return atom.section(QLatin1Char('/'), 1);
 }
