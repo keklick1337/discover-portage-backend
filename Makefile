@@ -70,8 +70,7 @@ install: build
 	@echo "  DBus conf:  $(INSTALL_PREFIX)/share/dbus-1/system.d/org.kde.discover.portagebackend.conf"
 	@echo ""
 	@echo "Next steps:"
-	@echo "  1. Restart DBus: sudo systemctl restart dbus"
-	@echo "  2. Restart Discover: killall plasma-discover 2>/dev/null; plasma-discover &"
+	@echo "  1. Restart Discover: killall plasma-discover 2>/dev/null; plasma-discover &"
 	@echo ""
 
 uninstall:
@@ -99,7 +98,6 @@ uninstall:
 	@echo ""
 	@echo "=== Uninstallation complete! ==="
 	@echo "Restart DBus and Discover to apply changes:"
-	@echo "  sudo systemctl restart dbus"
 	@echo "  killall plasma-discover 2>/dev/null; plasma-discover &"
 	@echo ""
 
