@@ -8,6 +8,8 @@
 #include "../resources/PortageResource.h"
 #include "../transaction/PortageTransaction.h"
 #include "../dialogs/UseFlagsDialog.h"
+#include "../repository/PortageSourcesBackend.h"
+#include "../utils/QmlEngineUtils.h"
 
 #include <Category/Category.h>
 #include <resources/StandardBackendUpdater.h>
@@ -23,6 +25,7 @@
 #include <QWindow>
 #include "repository/PortageRepositoryReader.h"
 #include "installed/PortageInstalledReader.h"
+#include <resources/SourcesModel.h>
 
 DISCOVER_BACKEND_PLUGIN(PortageBackend)
 
@@ -30,61 +33,20 @@ PortageBackend::PortageBackend(QObject *parent)
     : AbstractResourcesBackend(parent)
     , m_updater(new StandardBackendUpdater(this))
     , m_qmlInjector(new PortageQmlInjector(this))
+    , m_sourcesBackend(new PortageSourcesBackend(this))
     , m_initialized(false)
 {
     qDebug() << "Portage: Initializing backend";
-
-    // Load repository packages
-    PortageRepositoryReader repoReader(this, this);
-    repoReader.loadRepository();
-    const auto repoPackages = repoReader.packages();
     
-    // Collect known atoms for better version parsing
-    QSet<QString> knownAtoms;
-    for (auto it = repoPackages.constBegin(); it != repoPackages.constEnd(); ++it) {
-        PortageResource *r = it.value();
-        // insert by atom (category/package, lowercase)
-        QString atom = r->atom().toLower();
-        m_resources.insert(atom, r);
-        knownAtoms.insert(atom);
-    }
-
-    // Load installed packages and update resource states
-    PortageInstalledReader instReader(this, this);
-    instReader.setKnownPackages(knownAtoms); // Pass known packages for better parsing
-    instReader.loadInstalledPackages();
-    const auto installed = instReader.installedVersions();
-    const auto installedInfo = instReader.installedPackagesInfo();
+    // Load all packages (repository + installed)
+    loadPackages();
     
-    for (auto it = installedInfo.constBegin(); it != installedInfo.constEnd(); ++it) {
-        const QString atom = it.key();
-        const InstalledPackageInfo &info = it.value();
-        
-        // Look up by atom (category/package)
-        PortageResource *r = m_resources.value(atom.toLower(), nullptr);
-        if (r) {
-            r->setInstalledVersion(info.version);
-            r->setState(AbstractResource::Installed);
-            r->setRepository(info.repository);
-            r->setSlot(info.slot);
-            r->setInstalledUseFlags(info.useFlags);
-            r->setAvailableUseFlags(info.availableUseFlags);
-        } else {
-            // Create resource for installed package not present in repo scan
-            const QString pkg = atom.section(QLatin1Char('/'), 1);
-            PortageResource *nr = new PortageResource(atom, pkg, QString(), this);
-            nr->setInstalledVersion(info.version);
-            nr->setState(AbstractResource::Installed);
-            nr->setRepository(info.repository);
-            nr->setSlot(info.slot);
-            nr->setInstalledUseFlags(info.useFlags);
-            nr->setAvailableUseFlags(info.availableUseFlags);
-            m_resources.insert(atom.toLower(), nr);
-        }
-    }
-
     m_initialized = true;
     qDebug() << "Portage: Backend initialized with" << m_resources.size() << "packages";
+    
+    // Register our sources backend
+    SourcesModel::global()->addSourcesBackend(m_sourcesBackend);
+    qDebug() << "Portage: Registered SourcesBackend, sources model row count:" << m_sourcesBackend->sources()->rowCount();
     
     // DANGER: Register QML type directly without finding engine
     // This makes PortageQmlInjector available as "import org.kde.discover.portage 1.0"
@@ -104,45 +66,13 @@ PortageBackend::PortageBackend(QObject *parent)
 
 void PortageBackend::setupQmlInjector()
 {
-    QQmlEngine *engine = nullptr;
-    
-    // Method 1: Search all QML engines in entire app
-    auto engines = QCoreApplication::instance()->findChildren<QQmlEngine*>();
-    if (!engines.isEmpty()) {
-        engine = engines.first();
-        qDebug() << "PortageBackend: Found" << engines.size() << "QML engine(s) via findChildren";
-    }
-    
-    // Method 2: If not found, try top-level windows
-    if (!engine) {
-        const auto topLevelObjects = qApp->topLevelWindows();
-        for (QWindow *window : topLevelObjects) {
-            QObject *obj = qobject_cast<QObject*>(window);
-            if (!obj) {
-                continue;
-            }
-            
-            engine = qvariant_cast<QQmlEngine*>(obj->property("engine"));
-            if (engine) {
-                qDebug() << "PortageBackend: Found QML engine via window property";
-                break;
-            }
-
-            const auto children = obj->findChildren<QQmlEngine*>();
-            if (!children.isEmpty()) {
-                engine = children.first();
-                qDebug() << "PortageBackend: Found QML engine via window children";
-                break;
-            }
-        }
-    }
+    QQmlEngine *engine = QmlEngineUtils::findQmlEngine();
     
     if (engine) {
         qDebug() << "PortageBackend: Setting up QML injector with engine";
         m_qmlInjector->setQmlEngine(engine);
     } else {
         qDebug() << "PortageBackend: QML engine not found yet, will retry";
-        
         QTimer::singleShot(1000, this, &PortageBackend::setupQmlInjector);
     }
 }
@@ -409,6 +339,79 @@ Transaction *PortageBackend::removeApplication(AbstractResource *app)
 {
     qDebug() << "Portage: removeApplication()" << app->name();
     return new PortageTransaction(qobject_cast<PortageResource *>(app), Transaction::RemoveRole);
+}
+
+void PortageBackend::loadPackages()
+{
+    qDebug() << "Portage: Loading packages from repositories";
+    
+    // Load repository packages first
+    PortageRepositoryReader repoReader(this, this);
+    repoReader.loadRepository();
+    const auto repoPackages = repoReader.packages();
+    
+    // Collect known atoms for better version parsing
+    QSet<QString> knownAtoms;
+    for (auto it = repoPackages.constBegin(); it != repoPackages.constEnd(); ++it) {
+        PortageResource *r = it.value();
+        // insert by atom (category/package, lowercase)
+        QString atom = r->atom().toLower();
+        m_resources.insert(atom, r);
+        knownAtoms.insert(atom);
+    }
+
+    // Load installed packages and update resource states
+    PortageInstalledReader instReader(this, this);
+    instReader.setKnownPackages(knownAtoms); // Pass known packages for better parsing
+    instReader.loadInstalledPackages();
+    const auto installed = instReader.installedVersions();
+    const auto installedInfo = instReader.installedPackagesInfo();
+    
+    for (auto it = installedInfo.constBegin(); it != installedInfo.constEnd(); ++it) {
+        const QString atom = it.key();
+        const InstalledPackageInfo &info = it.value();
+        
+        // Look up by atom (category/package)
+        PortageResource *r = m_resources.value(atom.toLower(), nullptr);
+        if (r) {
+            r->setInstalledVersion(info.version);
+            r->setState(AbstractResource::Installed);
+            r->setRepository(info.repository);
+            r->setSlot(info.slot);
+            r->setInstalledUseFlags(info.useFlags);
+            r->setAvailableUseFlags(info.availableUseFlags);
+        } else {
+            // Create resource for installed package not present in repo scan
+            const QString pkg = atom.section(QLatin1Char('/'), 1);
+            PortageResource *nr = new PortageResource(atom, pkg, QString(), this);
+            nr->setInstalledVersion(info.version);
+            nr->setState(AbstractResource::Installed);
+            nr->setRepository(info.repository);
+            nr->setSlot(info.slot);
+            nr->setInstalledUseFlags(info.useFlags);
+            nr->setAvailableUseFlags(info.availableUseFlags);
+            m_resources.insert(atom.toLower(), nr);
+        }
+    }
+    
+    qDebug() << "Portage: Loaded" << m_resources.size() << "packages";
+}
+
+void PortageBackend::reloadPackages()
+{
+    qDebug() << "Portage: Reloading packages after repository changes";
+    
+    // Clear all existing resources
+    qDeleteAll(m_resources);
+    m_resources.clear();
+    
+    // Reload from disk
+    loadPackages();
+    
+    // Notify Discover that ALL data has changed (entire package catalog)
+    Q_EMIT allDataChanged(QVector<QByteArray>());
+    
+    qDebug() << "Portage: Package reload complete," << m_resources.size() << "packages loaded";
 }
 
 #include "PortageBackend.moc"

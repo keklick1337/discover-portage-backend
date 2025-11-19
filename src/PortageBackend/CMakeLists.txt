@@ -7,10 +7,13 @@ set(portage-backend_SRCS
     config/MakeConfReader.cpp
     auth/PortageAuthClient.cpp
     repository/PortageRepositoryReader.cpp
+    repository/PortageRepositoryConfig.cpp
+    repository/PortageSourcesBackend.cpp
     installed/PortageInstalledReader.cpp
     emerge/EmergeRunner.cpp
     emerge/UnmaskManager.cpp
     dialogs/UseFlagsDialog.cpp
+    utils/QmlEngineUtils.cpp
     portageui.qrc
 )
 
@@ -64,6 +67,7 @@ target_link_libraries(portage-backend
         Qt::Xml
         Qt::Qml
         Qt::Quick
+        Qt::Network
         KF6::CoreAddons
         KF6::ConfigCore
         KF6::I18n

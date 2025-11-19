@@ -49,6 +49,16 @@ ActionReply PortageAuthHelper::execute(const QVariantMap &args)
         return worldAdd(args);
     } else if (action == QStringLiteral("world.remove")) {
         return worldRemove(args);
+    } else if (action == QStringLiteral("repository.enable")) {
+        return repositoryEnable(args);
+    } else if (action == QStringLiteral("repository.disable")) {
+        return repositoryDisable(args);
+    } else if (action == QStringLiteral("repository.remove")) {
+        return repositoryRemove(args);
+    } else if (action == QStringLiteral("repository.add")) {
+        return repositoryAdd(args);
+    } else if (action == QStringLiteral("repository.sync")) {
+        return repositorySync(args);
     }
     
     return errorReply(QStringLiteral("Unknown action: ") + action);
@@ -521,6 +531,139 @@ bool PortageAuthHelper::removeAtomFromAllFiles(const QString &packageUseDir, con
     }
     
     return true;
+}
+
+//=============================================================================
+// Repository Management Operations
+//=============================================================================
+
+ActionReply PortageAuthHelper::repositoryEnable(const QVariantMap &args)
+{
+    syslog(LOG_INFO, "PortageAuthHelper::repositoryEnable called");
+    
+    const QString repoName = args.value(QStringLiteral("name")).toString();
+    
+    if (repoName.isEmpty()) {
+        return errorReply(QStringLiteral("Repository name is required"));
+    }
+    
+    syslog(LOG_INFO, "eselect repository enable %s", qPrintable(repoName));
+    
+    QStringList cmdArgs;
+    cmdArgs << QStringLiteral("repository") << QStringLiteral("enable") << repoName;
+    
+    return runProcess(QStringLiteral("/usr/bin/eselect"), cmdArgs, 30000);
+}
+
+ActionReply PortageAuthHelper::repositoryDisable(const QVariantMap &args)
+{
+    syslog(LOG_INFO, "PortageAuthHelper::repositoryDisable called");
+    
+    const QString repoName = args.value(QStringLiteral("name")).toString();
+    
+    if (repoName.isEmpty()) {
+        return errorReply(QStringLiteral("Repository name is required"));
+    }
+    
+    // Don't allow disabling the main gentoo repository
+    if (repoName == QStringLiteral("gentoo")) {
+        return errorReply(QStringLiteral("Cannot disable the main Gentoo repository"));
+    }
+    
+    syslog(LOG_INFO, "eselect repository disable %s", qPrintable(repoName));
+    
+    QStringList cmdArgs;
+    cmdArgs << QStringLiteral("repository") << QStringLiteral("disable") << repoName;
+    
+    return runProcess(QStringLiteral("/usr/bin/eselect"), cmdArgs, 30000);
+}
+
+ActionReply PortageAuthHelper::repositoryRemove(const QVariantMap &args)
+{
+    syslog(LOG_INFO, "PortageAuthHelper::repositoryRemove called");
+    
+    const QString repoName = args.value(QStringLiteral("name")).toString();
+    
+    if (repoName.isEmpty()) {
+        return errorReply(QStringLiteral("Repository name is required"));
+    }
+    
+    // Don't allow removing the main gentoo repository
+    if (repoName == QStringLiteral("gentoo")) {
+        return errorReply(QStringLiteral("Cannot remove the main Gentoo repository"));
+    }
+    
+    syslog(LOG_INFO, "eselect repository remove -f %s", qPrintable(repoName));
+    
+    QStringList cmdArgs;
+    cmdArgs << QStringLiteral("repository") << QStringLiteral("remove") 
+            << QStringLiteral("-f") << repoName;
+    
+    return runProcess(QStringLiteral("/usr/bin/eselect"), cmdArgs, 30000);
+}
+
+ActionReply PortageAuthHelper::repositoryAdd(const QVariantMap &args)
+{
+    syslog(LOG_INFO, "PortageAuthHelper::repositoryAdd called");
+    
+    const QString repoName = args.value(QStringLiteral("name")).toString();
+    const QString syncType = args.value(QStringLiteral("syncType")).toString();
+    const QString syncUri = args.value(QStringLiteral("syncUri")).toString();
+    
+    if (repoName.isEmpty() || syncType.isEmpty() || syncUri.isEmpty()) {
+        return errorReply(QStringLiteral("Repository name, sync type, and URI are required"));
+    }
+    
+    syslog(LOG_INFO, "eselect repository add %s %s %s", qPrintable(repoName), qPrintable(syncType), qPrintable(syncUri));
+    
+    QStringList cmdArgs;
+    cmdArgs << QStringLiteral("repository") << QStringLiteral("add") << repoName << syncType << syncUri;
+    
+    return runProcess(QStringLiteral("/usr/bin/eselect"), cmdArgs, 60000);
+}
+
+ActionReply PortageAuthHelper::repositorySync(const QVariantMap &args)
+{
+    syslog(LOG_INFO, "PortageAuthHelper::repositorySync called");
+    
+    const QString repoName = args.value(QStringLiteral("repository")).toString();
+    const bool runEixUpdate = args.value(QStringLiteral("runEixUpdate"), true).toBool();
+    
+    ActionReply reply;
+    
+    // Run emaint sync
+    if (repoName.isEmpty()) {
+        // Sync all repositories
+        syslog(LOG_INFO, "emaint sync --auto");
+        reply = runProcess(QStringLiteral("/usr/sbin/emaint"), 
+                          QStringList() << QStringLiteral("sync") << QStringLiteral("--auto"),
+                          600000); // 10 min timeout
+    } else {
+        // Sync specific repository
+        syslog(LOG_INFO, "emaint sync -r %s", qPrintable(repoName));
+        reply = runProcess(QStringLiteral("/usr/sbin/emaint"),
+                          QStringList() << QStringLiteral("sync") << QStringLiteral("-r") << repoName,
+                          600000); // 10 min timeout
+    }
+    
+    if (reply.failed()) {
+        return reply;
+    }
+    
+    // Run eix-update if requested and available
+    if (runEixUpdate && QFile::exists(QStringLiteral("/usr/bin/eix-update"))) {
+        syslog(LOG_INFO, "Running eix-update");
+        ActionReply eixReply = runProcess(QStringLiteral("/usr/bin/eix-update"),
+                                         QStringList(),
+                                         600000); // 10 min timeout
+        
+        // Don't fail the whole operation if eix-update fails
+        if (eixReply.failed()) {
+            syslog(LOG_WARNING, "eix-update failed but continuing");
+        }
+    }
+    
+    return successReply();
 }
 
 KAUTH_HELPER_MAIN("org.kde.discover.portagebackend", PortageAuthHelper)

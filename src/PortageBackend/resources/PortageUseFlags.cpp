@@ -6,6 +6,7 @@
 #include "PortageUseFlags.h"
 #include "config/MakeConfReader.h"
 #include "../repository/PortageRepositoryReader.h"
+#include "../repository/PortageRepositoryConfig.h"
 #include "../installed/PortageInstalledReader.h"
 #include "../utils/StringUtils.h"
 #include "../utils/PortagePaths.h"
@@ -163,7 +164,7 @@ QStringList PortageUseFlags::parseIUSE(const QString &iuseLine)
 QStringList PortageUseFlags::readAvailableUseFlags(const QString &atom, const QString &repoPath)
 {
     // Try to read IUSE from repository metadata
-    // Format: /var/db/repos/gentoo/category/package/*.ebuild
+    // Format: <repoPath>/category/package/*.ebuild
     const QString category = extractCategory(atom);
     const QString package = extractPackageName(atom);
     
@@ -483,8 +484,18 @@ PortageUseFlags::EffectiveUseFlags PortageUseFlags::computeEffectiveUseFlags(con
 {
     EffectiveUseFlags result;
     
+    // Find repository location for the package
+    QString foundRepo = PortageRepositoryReader::findPackageRepository(atom);
+    QString repoPath;
+    if (!foundRepo.isEmpty()) {
+        repoPath = PortageRepositoryConfig::instance().getRepositoryLocation(foundRepo);
+    } else {
+        // Default to gentoo repository
+        repoPath = PortageRepositoryConfig::instance().getRepositoryLocation(QStringLiteral("gentoo"));
+    }
+    
     // 1. Get IUSE from repository ebuild
-    UseFlagInfo repoInfo = readRepositoryPackageInfo(atom, version);
+    UseFlagInfo repoInfo = readRepositoryPackageInfo(atom, version, repoPath);
     result.iuse = repoInfo.availableFlags;
     result.descriptions = repoInfo.descriptions;
     

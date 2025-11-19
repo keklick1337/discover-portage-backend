@@ -83,10 +83,10 @@ plasma-discover
 
 ### Overlays Management
 
-- [ ] Display installed overlays
-- [ ] Refresh package list from overlays
-- [ ] Add new overlays
-- [ ] Remove overlays
+- [x] Display installed overlays (backend: listing enabled overlays implemented)
+- [x] Refresh package list from overlays (backend: official overlays index fetch implemented)
+- [x] Add new overlays
+- [x] Remove overlays
 - [ ] Overlay metadata display
 - [x] Search packages across overlays
 
@@ -105,6 +105,7 @@ plasma-discover
 
 - [ ] Application version may not load when opening package details
 - [ ] When bulk deleting packages in the Discover interface, they are shown as deleted, but in fact they are not
+- [ ] On portage sources need to delete 'Add source' button
 
 ## Contributing
 

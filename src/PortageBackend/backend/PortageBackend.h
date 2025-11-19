@@ -11,6 +11,7 @@
 class PortageResource;
 class StandardBackendUpdater;
 class PortageQmlInjector;
+class PortageSourcesBackend;
 
 class PortageBackend : public AbstractResourcesBackend
 {
@@ -36,18 +37,24 @@ public:
     Transaction *removeApplication(AbstractResource *app) override;
 
     AbstractReviewsBackend *reviewsBackend() const override { return nullptr; }
+    PortageSourcesBackend *sourcesBackend() const { return m_sourcesBackend; }
 
     QHash<QString, PortageResource *> resources() const { return m_resources; }
     
     // Show version selection and USE flags dialogs, returns false if cancelled
     bool showInstallDialogs(PortageResource *portageRes);
+    
+    // Reload packages from repositories after repository changes
+    void reloadPackages();
 
 private:
     void populateTestPackages();
     void setupQmlInjector();
+    void loadPackages(); // Internal package loading logic
 
     QHash<QString, PortageResource *> m_resources;
     StandardBackendUpdater *m_updater;
     PortageQmlInjector *m_qmlInjector;
+    PortageSourcesBackend *m_sourcesBackend;
     bool m_initialized;
 };

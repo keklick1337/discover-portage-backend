@@ -20,9 +20,11 @@ namespace PortagePaths
     
     // Database paths
     constexpr const char* PKG_DB = "/var/db/pkg";
-    constexpr const char* REPOS_DB = "/var/db/repos";
     constexpr const char* WORLD_FILE = "/var/lib/portage/world";
     
     // Default repository
     constexpr const char* DEFAULT_REPO = "gentoo";
+    
+    // API URLs
+    constexpr const char* GENTOO_REPOSITORIES_API = "https://api.gentoo.org/overlays/repositories.xml";
 }

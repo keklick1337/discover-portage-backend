@@ -247,4 +247,66 @@ void PortageAuthClient::handleJobResult(KAuth::ExecuteJob *job,
     }
 }
 
+void PortageAuthClient::repositoryEnable(const QString &name,
+                                        ResultCallback callback)
+{
+    QVariantMap arguments;
+    arguments[QStringLiteral("action")] = QStringLiteral("repository.enable");
+    arguments[QStringLiteral("name")] = name;
+    
+    executeAction(QStringLiteral("org.kde.discover.portagebackend.execute"),
+                 arguments, callback, nullptr);
+}
+
+void PortageAuthClient::repositoryDisable(const QString &name,
+                                         ResultCallback callback)
+{
+    QVariantMap arguments;
+    arguments[QStringLiteral("action")] = QStringLiteral("repository.disable");
+    arguments[QStringLiteral("name")] = name;
+    
+    executeAction(QStringLiteral("org.kde.discover.portagebackend.execute"),
+                 arguments, callback, nullptr);
+}
+
+void PortageAuthClient::repositoryRemove(const QString &name,
+                                        ResultCallback callback)
+{
+    QVariantMap arguments;
+    arguments[QStringLiteral("action")] = QStringLiteral("repository.remove");
+    arguments[QStringLiteral("name")] = name;
+    
+    executeAction(QStringLiteral("org.kde.discover.portagebackend.execute"),
+                 arguments, callback, nullptr);
+}
+
+void PortageAuthClient::repositoryAdd(const QString &name,
+                                     const QString &syncType,
+                                     const QString &syncUri,
+                                     ResultCallback callback)
+{
+    QVariantMap arguments;
+    arguments[QStringLiteral("action")] = QStringLiteral("repository.add");
+    arguments[QStringLiteral("name")] = name;
+    arguments[QStringLiteral("syncType")] = syncType;
+    arguments[QStringLiteral("syncUri")] = syncUri;
+    
+    executeAction(QStringLiteral("org.kde.discover.portagebackend.execute"),
+                 arguments, callback, nullptr);
+}
+
+void PortageAuthClient::repositorySync(const QString &repository,
+                                      bool runEixUpdate,
+                                      ResultCallback callback,
+                                      ProgressCallback progress)
+{
+    QVariantMap arguments;
+    arguments[QStringLiteral("action")] = QStringLiteral("repository.sync");
+    arguments[QStringLiteral("repository")] = repository;
+    arguments[QStringLiteral("runEixUpdate")] = runEixUpdate;
+    
+    executeAction(QStringLiteral("org.kde.discover.portagebackend.execute"),
+                 arguments, callback, progress);
+}
+
 #include "moc_PortageAuthClient.cpp"

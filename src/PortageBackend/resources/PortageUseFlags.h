@@ -34,10 +34,10 @@ public:
 
     UseFlagInfo readInstalledPackageInfo(const QString &atom, const QString &version);
 
-    QStringList readAvailableUseFlags(const QString &atom, const QString &repoPath = QStringLiteral("/var/db/repos/gentoo"));
+    QStringList readAvailableUseFlags(const QString &atom, const QString &repoPath);
     
     // Read USE flags from repository ebuild and metadata.xml
-    UseFlagInfo readRepositoryPackageInfo(const QString &atom, const QString &version, const QString &repoPath = QStringLiteral("/var/db/repos/gentoo"));
+    UseFlagInfo readRepositoryPackageInfo(const QString &atom, const QString &version, const QString &repoPath);
 
     // Compute effective USE flags by combining:
     // 1. Global USE from make.conf

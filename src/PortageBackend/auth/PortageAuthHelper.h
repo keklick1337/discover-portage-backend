@@ -39,6 +39,13 @@ private:
 
     ActionReply worldAdd(const QVariantMap &args);
     ActionReply worldRemove(const QVariantMap &args);
+    
+    // Repository management
+    ActionReply repositoryEnable(const QVariantMap &args);
+    ActionReply repositoryDisable(const QVariantMap &args);
+    ActionReply repositoryRemove(const QVariantMap &args);
+    ActionReply repositoryAdd(const QVariantMap &args);
+    ActionReply repositorySync(const QVariantMap &args);
 
     ActionReply runProcess(const QString &program, const QStringList &args, 
                           int timeoutMs = -1,  // -1 = no timeout (unlimited)

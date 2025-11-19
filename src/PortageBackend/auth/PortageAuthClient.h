@@ -71,6 +71,25 @@ public:
     void removeFromWorld(const QString &atom,
                         ResultCallback callback = nullptr);
 
+    void repositoryEnable(const QString &name,
+                         ResultCallback callback = nullptr);
+
+    void repositoryDisable(const QString &name,
+                          ResultCallback callback = nullptr);
+
+    void repositoryRemove(const QString &name,
+                         ResultCallback callback = nullptr);
+
+    void repositoryAdd(const QString &name,
+                      const QString &syncType,
+                      const QString &syncUri,
+                      ResultCallback callback = nullptr);
+
+    void repositorySync(const QString &repository,
+                       bool runEixUpdate = true,
+                       ResultCallback callback = nullptr,
+                       ProgressCallback progress = nullptr);
+
 Q_SIGNALS:
     void operationStarted(const QString &action);
 

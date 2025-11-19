@@ -8,6 +8,7 @@
 #include "../auth/PortageAuthClient.h"
 #include "PortageUseFlags.h"
 #include "../config/MakeConfReader.h"
+#include "../repository/PortageRepositoryConfig.h"
 #include "../repository/PortageRepositoryReader.h"
 #include <KLocalizedString>
 #include <QProcess>
@@ -524,19 +525,19 @@ void PortageResource::loadUseFlagInfo()
         // For non-installed packages, read from repository
         QString version = m_availableVersion.isEmpty() ? QStringLiteral("9999") : m_availableVersion;
         
-        // Find repository path using PortageRepositoryReader
+        // Find repository path using PortageRepositoryConfig
         QString repoPath;
         if (!m_repository.isEmpty()) {
-            repoPath = QStringLiteral("/var/db/repos/") + m_repository;
+            repoPath = PortageRepositoryConfig::instance().getRepositoryLocation(m_repository);
         } else {
             // Try to find package in any repository
             QString foundRepo = PortageRepositoryReader::findPackageRepository(m_atom);
             if (!foundRepo.isEmpty()) {
                 m_repository = foundRepo;
-                repoPath = QStringLiteral("/var/db/repos/") + foundRepo;
+                repoPath = PortageRepositoryConfig::instance().getRepositoryLocation(foundRepo);
             } else {
                 // Default to gentoo repository
-                repoPath = QStringLiteral("/var/db/repos/gentoo");
+                repoPath = PortageRepositoryConfig::instance().getRepositoryLocation(QStringLiteral("gentoo"));
             }
         }
         

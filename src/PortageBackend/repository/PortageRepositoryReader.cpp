@@ -4,6 +4,7 @@
  */
 
 #include "PortageRepositoryReader.h"
+#include "PortageRepositoryConfig.h"
 #include "../backend/PortageBackend.h"
 #include "../resources/PortageResource.h"
 #include "../utils/AtomParser.h"
@@ -14,26 +15,31 @@
 PortageRepositoryReader::PortageRepositoryReader(PortageBackend *backend, QObject *parent)
     : QObject(parent)
     , m_backend(backend)
-    , m_repoPath(QStringLiteral("/var/db/repos"))
+    , m_repoPath()
 {
+    // Reload config on init
+    PortageRepositoryConfig::instance().reload();
 }
 
 void PortageRepositoryReader::loadRepository()
 {
-    qDebug() << "Portage: RepositoryReader loading from" << m_repoPath;
+    const QStringList allRepos = PortageRepositoryConfig::instance().getAllRepositoryNames();
+    qDebug() << "Portage: RepositoryReader loading from" << allRepos.size() << "repositories";
 
-    QDir reposDir(m_repoPath);
-    if (!reposDir.exists()) {
-        qDebug() << "Portage: repository path does not exist:" << m_repoPath;
+    if (allRepos.isEmpty()) {
+        qDebug() << "Portage: no repositories found in configuration";
         Q_EMIT packagesLoaded(0);
         return;
     }
 
-    // Iterate over repositories (e.g., gentoo)
-    const QFileInfoList repoEntries = reposDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
-    for (const QFileInfo &repoInfo : repoEntries) {
-        const QString repoPath = repoInfo.absoluteFilePath();
-        scanRepositoryPath(repoPath);
+    // Iterate over all configured repositories
+    for (const QString &repoName : allRepos) {
+        const QString repoPath = PortageRepositoryConfig::instance().getRepositoryLocation(repoName);
+        if (!repoPath.isEmpty() && QDir(repoPath).exists()) {
+            scanRepositoryPath(repoPath);
+        } else {
+            qDebug() << "Portage: Repository" << repoName << "path not found:" << repoPath;
+        }
     }
 
     qDebug() << "Portage: RepositoryReader found" << m_packages.size() << "packages (scan only)";
@@ -92,28 +98,19 @@ QStringList PortageRepositoryReader::findAvailableVersions(const QString &pkgPat
     return versions;
 }
 
-// Static helper: Get all repository names from /var/db/repos
+// Static helper: Get all repository names from configuration
 QStringList PortageRepositoryReader::getAllRepositories()
 {
-    QDir reposDir(QStringLiteral("/var/db/repos"));
-    if (!reposDir.exists()) {
-        return QStringList();
-    }
-    
-    return reposDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    return PortageRepositoryConfig::instance().getAllRepositoryNames();
 }
 
 // Static helper: Find which repository contains a package
 QString PortageRepositoryReader::findPackageRepository(const QString &atom)
 {
-    QDir reposDir(QStringLiteral("/var/db/repos"));
-    if (!reposDir.exists()) {
-        return QString();
-    }
-    
-    const QStringList repos = reposDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    const QStringList repos = PortageRepositoryConfig::instance().getAllRepositoryNames();
     for (const QString &repo : repos) {
-        QString testPath = QStringLiteral("/var/db/repos/%1/%2").arg(repo, atom);
+        const QString repoPath = PortageRepositoryConfig::instance().getRepositoryLocation(repo);
+        const QString testPath = repoPath + QLatin1Char('/') + atom;
         if (QDir(testPath).exists()) {
             return repo;
         }
@@ -135,7 +132,12 @@ QString PortageRepositoryReader::findPackagePath(const QString &atom, const QStr
         }
     }
     
-    QString pkgPath = QStringLiteral("/var/db/repos/%1/%2").arg(repo, atom);
+    const QString repoPath = PortageRepositoryConfig::instance().getRepositoryLocation(repo);
+    if (repoPath.isEmpty()) {
+        return QString();
+    }
+    
+    const QString pkgPath = repoPath + QLatin1Char('/') + atom;
     if (QDir(pkgPath).exists()) {
         return pkgPath;
     }

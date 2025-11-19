@@ -4,5 +4,6 @@
     <file>qml/PortageActionInjector.qml</file>
     <file>qml/ReinstallAction.qml</file>
     <file>qml/UseFlagsInfo.qml</file>
+    <file>qml/AddRepositoryDialog.qml</file>
  </qresource>
 </RCC>
