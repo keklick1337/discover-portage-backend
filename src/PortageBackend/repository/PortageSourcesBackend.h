@@ -47,7 +47,7 @@ public:
     bool removeSource(const QString &id) override;
     QString idDescription() override;
     QVariantList actions() const override;
-    bool supportsAdding() const override { return false; }
+    bool supportsAdding() const override { return true; }
     bool canFilterSources() const override { return false; }
 
     void loadOfficialRepositories();
