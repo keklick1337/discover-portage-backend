@@ -88,6 +88,36 @@ configure_file(
     @ONLY
 )
 
+# Detect Discover version from installed package
+execute_process(
+    COMMAND sh -c "basename /var/db/pkg/kde-plasma/discover-* 2>/dev/null | cut -d'-' -f2- || echo '6.4.5'"
+    OUTPUT_VARIABLE INSTALLED_DISCOVER_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+message(STATUS "Detected Discover version: ${INSTALLED_DISCOVER_VERSION}")
+
+# Determine which Category.h to use based on version
+# Version 6.4.90+ uses Category::Type enum, older versions use bool isAddons
+if(INSTALLED_DISCOVER_VERSION VERSION_GREATER_EQUAL "6.4.90")
+    message(STATUS "Using new Category.h (with Type enum) for Discover ${INSTALLED_DISCOVER_VERSION}")
+    # Copy new version to standard location
+    configure_file(
+        "${DISCOVER_INCLUDE_DIR}/libdiscover/Category_new/Category.h"
+        "${DISCOVER_INCLUDE_DIR}/libdiscover/Category/Category.h"
+        COPYONLY
+    )
+    add_compile_definitions(DISCOVER_CATEGORY_HAS_TYPE_ENUM)
+else()
+    message(STATUS "Using old Category.h (with bool isAddons) for Discover ${INSTALLED_DISCOVER_VERSION}")
+    # Copy old version to standard location
+    configure_file(
+        "${DISCOVER_INCLUDE_DIR}/libdiscover/Category_645/Category.h"
+        "${DISCOVER_INCLUDE_DIR}/libdiscover/Category/Category.h"
+        COPYONLY
+    )
+endif()
+
 # Add include directories for bundled Discover headers
 include_directories(${DISCOVER_INCLUDE_DIR}/libdiscover)
 include_directories(${DISCOVER_INCLUDE_DIR})

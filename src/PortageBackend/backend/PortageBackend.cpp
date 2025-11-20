@@ -209,7 +209,11 @@ QList<std::shared_ptr<Category>> PortageBackend::category() const
             f,
             QSet<QString>{displayName()},
             QList<std::shared_ptr<Category>>{},
-            false);
+#ifdef DISCOVER_CATEGORY_HAS_TYPE_ENUM
+            Category::Type::Package);
+#else
+            false); // isAddons = false for old versions
+#endif
         children << c;
     }
 
@@ -219,7 +223,11 @@ QList<std::shared_ptr<Category>> PortageBackend::category() const
         rootFlt,
         QSet<QString>{displayName()},
         children,
-        false);
+#ifdef DISCOVER_CATEGORY_HAS_TYPE_ENUM
+        Category::Type::Package);
+#else
+        false); // isAddons = false for old versions
+#endif
 
     return {root};
 }
